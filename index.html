@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>JobHunt</title>
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#7eb8f7">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #1a1a2e;
+    color: #e0e0e0;
+    font-family: system-ui, sans-serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    text-align: center;
+  }
+  img { width: 72px; height: 72px; border-radius: 16px; margin-bottom: 16px; }
+  h1 { font-size: 22px; color: #7eb8f7; margin-bottom: 8px; }
+  p { color: #9ca3af; font-size: 14px; line-height: 1.5; margin-bottom: 24px; }
+  .card {
+    background: #16213e;
+    border: 1px solid #2d3748;
+    border-radius: 10px;
+    padding: 20px;
+    width: 100%;
+    max-width: 420px;
+    margin-bottom: 16px;
+    text-align: left;
+  }
+  .card h2 { font-size: 14px; color: #7eb8f7; margin-bottom: 12px; }
+  .step { font-size: 13px; color: #e0e0e0; margin-bottom: 8px; padding-left: 4px; }
+  .step span { color: #7eb8f7; font-weight: 700; margin-right: 6px; }
+  .divider { color: #4b5563; font-size: 13px; margin: 16px 0; }
+  input[type="url"] {
+    width: 100%;
+    background: #0f172a;
+    border: 1px solid #2d3748;
+    border-radius: 6px;
+    color: #e0e0e0;
+    padding: 10px 12px;
+    font-size: 14px;
+    margin-bottom: 10px;
+  }
+  input[type="url"]:focus { outline: none; border-color: #7eb8f7; }
+  button {
+    width: 100%;
+    padding: 10px;
+    background: #2563eb;
+    border: none;
+    border-radius: 6px;
+    color: #fff;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  button:hover { background: #1d4ed8; }
+  #install-btn { display: none; margin-bottom: 16px; background: #059669; }
+  #install-btn:hover { background: #047857; }
+</style>
+</head>
+<body>
+<img src="/icon.png" alt="JobHunt">
+<h1>JobHunt</h1>
+<p>Capture d'offres d'emploi depuis Android</p>
+
+<button id="install-btn">Installer l'app</button>
+
+<div class="card">
+  <h2>Comment utiliser</h2>
+  <div class="step"><span>1</span>Installe l'app (bouton ci-dessus)</div>
+  <div class="step"><span>2</span>Ouvre une offre dans ton navigateur</div>
+  <div class="step"><span>3</span>Partager → JobHunt</div>
+  <div class="step"><span>4</span>Confirme et envoie</div>
+</div>
+
+<div class="card">
+  <h2>Ou coller une URL directement</h2>
+  <input type="url" id="manual-url" placeholder="https://ca.linkedin.com/jobs/...">
+  <button onclick="goToShare()">Analyser</button>
+</div>
+
+<script>
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/sw.js');
+  }
+
+  let deferredPrompt;
+  window.addEventListener('beforeinstallprompt', e => {
+    e.preventDefault();
+    deferredPrompt = e;
+    document.getElementById('install-btn').style.display = 'block';
+  });
+
+  document.getElementById('install-btn').addEventListener('click', () => {
+    if (deferredPrompt) {
+      deferredPrompt.prompt();
+      deferredPrompt.userChoice.then(() => {
+        deferredPrompt = null;
+        document.getElementById('install-btn').style.display = 'none';
+      });
+    }
+  });
+
+  function goToShare() {
+    const url = document.getElementById('manual-url').value.trim();
+    if (url) window.location.href = '/share?url=' + encodeURIComponent(url);
+  }
+
+  document.getElementById('manual-url').addEventListener('keydown', e => {
+    if (e.key === 'Enter') goToShare();
+  });
+</script>
+</body>
+</html>

@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>JobHunt — Capturer</title>
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#7eb8f7">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #1a1a2e;
+    color: #e0e0e0;
+    font-family: system-ui, sans-serif;
+    font-size: 14px;
+    padding: 16px;
+    max-width: 600px;
+    margin: 0 auto;
+  }
+  h1 { font-size: 16px; color: #7eb8f7; margin-bottom: 14px; }
+  .field { margin-bottom: 10px; }
+  label { display: block; font-size: 12px; color: #9ca3af; margin-bottom: 3px; }
+  input, textarea {
+    width: 100%;
+    background: #16213e;
+    border: 1px solid #2d3748;
+    border-radius: 6px;
+    color: #e0e0e0;
+    padding: 8px 10px;
+    font-size: 13px;
+    font-family: inherit;
+  }
+  textarea { resize: vertical; min-height: 80px; }
+  input:focus, textarea:focus { outline: none; border-color: #7eb8f7; }
+  .row { display: flex; gap: 10px; }
+  .row .field { flex: 1; }
+  #progress-wrap { margin: 12px 0; display: none; }
+  #progress-label { font-size: 12px; color: #9ca3af; margin-bottom: 4px; }
+  #progress-track {
+    width: 100%; height: 5px;
+    background: #2d3748; border-radius: 3px; overflow: hidden;
+  }
+  #progress-bar {
+    height: 100%; width: 0%;
+    background: #7eb8f7; border-radius: 3px;
+    transition: width 0.15s linear, background 0.3s;
+  }
+  #fallback {
+    display: none;
+    background: #16213e;
+    border: 1px solid #2d3748;
+    border-radius: 8px;
+    padding: 14px;
+    margin-bottom: 14px;
+  }
+  #fallback p { font-size: 13px; color: #f59e0b; margin-bottom: 8px; }
+  #fallback textarea { min-height: 120px; margin-bottom: 8px; }
+  #btn-analyze {
+    width: 100%;
+    padding: 9px;
+    background: #374151;
+    border: none;
+    border-radius: 6px;
+    color: #e0e0e0;
+    font-size: 13px;
+    cursor: pointer;
+    margin-bottom: 4px;
+  }
+  #btn-analyze:hover { background: #4b5563; }
+  #btn-send {
+    width: 100%;
+    margin-top: 12px;
+    padding: 12px;
+    background: #2563eb;
+    border: none;
+    border-radius: 6px;
+    color: #fff;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  #btn-send:hover:not(:disabled) { background: #1d4ed8; }
+  #btn-send:disabled { background: #374151; cursor: not-allowed; }
+  #status { margin-top: 8px; font-size: 13px; min-height: 16px; text-align: center; }
+  .ok  { color: #34d399; }
+  .err { color: #f87171; }
+  #url-display {
+    font-size: 11px; color: #6b7280;
+    margin-bottom: 14px;
+    word-break: break-all;
+  }
+</style>
+</head>
+<body>
+<h1>JobHunt — Capturer cette offre</h1>
+<div id="url-display"></div>
+
+<div id="fallback">
+  <p>Auto-extraction impossible (site protege). Colle le texte de l'offre ici :</p>
+  <textarea id="paste-area" placeholder="Selectionne tout le texte de la page offre et colle-le ici..."></textarea>
+  <button id="btn-analyze">Analyser le texte colle</button>
+</div>
+
+<div class="field">
+  <label>Poste</label>
+  <input id="f-poste" type="text">
+</div>
+<div class="row">
+  <div class="field">
+    <label>Entreprise</label>
+    <input id="f-entreprise" type="text">
+  </div>
+  <div class="field">
+    <label>Lieu</label>
+    <input id="f-lieu" type="text">
+  </div>
+</div>
+<div class="row">
+  <div class="field">
+    <label>Source</label>
+    <input id="f-source" type="text">
+  </div>
+  <div class="field">
+    <label>Type de poste</label>
+    <input id="f-type_poste" type="text" placeholder="Permanent, Contractuel...">
+  </div>
+</div>
+<div class="row">
+  <div class="field">
+    <label>Date de publication</label>
+    <input id="f-date_publication" type="text">
+  </div>
+  <div class="field">
+    <label>Deadline</label>
+    <input id="f-deadline" type="text" placeholder="YYYY-MM-DD">
+  </div>
+</div>
+<div class="field">
+  <label>Contexte de l'entreprise</label>
+  <textarea id="f-contexte"></textarea>
+</div>
+<div class="field">
+  <label>Mission</label>
+  <textarea id="f-mission"></textarea>
+</div>
+<div class="field">
+  <label>Qualifications</label>
+  <textarea id="f-qualifications"></textarea>
+</div>
+<div class="field">
+  <label>Autres (salaire, avantages...)</label>
+  <textarea id="f-autres"></textarea>
+</div>
+
+<div id="progress-wrap">
+  <div id="progress-label">Analyse IA en cours...</div>
+  <div id="progress-track"><div id="progress-bar"></div></div>
+</div>
+
+<button id="btn-send" disabled><span id="btn-label">Patientez...</span></button>
+<div id="status"></div>
+
+<script>
+const WEBHOOK_URL = "https://script.google.com/macros/s/AKfycby-4jNAn6oxvbNFzbVrX9TYEaOgD2G1TtA67Rom7njZvGvXnWfA2JvAiEhLzPembPp4/exec";
+const FIELD_KEYS = ["poste","entreprise","lieu","source","date_publication","deadline","type_poste","contexte","mission","qualifications","autres"];
+
+function detectSource(url) {
+  if (!url) return "";
+  if (url.includes("linkedin.com"))    return "LinkedIn";
+  if (url.includes("indeed.com") || url.includes("emplois.ca")) return "Indeed";
+  if (url.includes("jobillico.com"))   return "Jobillico";
+  if (url.includes("ziprecruiter.com")) return "ZipRecruiter";
+  if (url.includes("glassdoor.com"))   return "Glassdoor";
+  if (url.includes("monster.com") || url.includes("monster.ca")) return "Monster";
+  try { return new URL(url).hostname.replace("www.", ""); } catch { return ""; }
+}
+
+function fillFields(fields) {
+  FIELD_KEYS.forEach(k => {
+    const el = document.getElementById("f-" + k);
+    if (el && fields[k]) el.value = fields[k];
+  });
+}
+
+let progressTimer = null;
+function startProgress(label) {
+  const wrap = document.getElementById("progress-wrap");
+  const bar  = document.getElementById("progress-bar");
+  const lbl  = document.getElementById("progress-label");
+  wrap.style.display = "block";
+  lbl.textContent = label || "Analyse IA en cours...";
+  bar.style.background = "#7eb8f7";
+  bar.style.width = "0%";
+  let pct = 0;
+  progressTimer = setInterval(() => {
+    pct += (88 - pct) * 0.04 + 0.4;
+    bar.style.width = Math.min(88, pct) + "%";
+  }, 80);
+}
+function endProgress(ok) {
+  clearInterval(progressTimer);
+  const bar = document.getElementById("progress-bar");
+  bar.style.width = "100%";
+  bar.style.background = ok ? "#34d399" : "#f87171";
+}
+
+async function analyze(pageUrl, text) {
+  startProgress("Analyse IA en cours...");
+  const params = new URLSearchParams({ url: pageUrl });
+  if (text) params.append("text", text.slice(0, 8000));
+
+  const res = await fetch("/api/process?" + params.toString());
+  const data = await res.json();
+
+  if (!res.ok) throw new Error(data.error || "Erreur serveur");
+  return data;
+}
+
+const params = new URLSearchParams(window.location.search);
+const pageUrl = params.get("url") || "";
+
+document.getElementById("url-display").textContent = pageUrl;
+document.getElementById("f-source").value = detectSource(pageUrl);
+
+if (!pageUrl) {
+  document.getElementById("btn-label").textContent = "URL manquante";
+} else {
+  analyze(pageUrl, "")
+    .then(fields => {
+      fillFields(fields);
+      endProgress(true);
+      document.getElementById("btn-label").textContent = "Confirmer et envoyer";
+      document.getElementById("btn-send").disabled = false;
+    })
+    .catch(err => {
+      endProgress(false);
+      if (err.message === "fetch_failed" || err.message === "insufficient_content") {
+        document.getElementById("fallback").style.display = "block";
+      }
+      document.getElementById("btn-label").textContent = "Envoyer manuellement";
+      document.getElementById("btn-send").disabled = false;
+    });
+}
+
+document.getElementById("btn-analyze").addEventListener("click", () => {
+  const text = document.getElementById("paste-area").value.trim();
+  if (!text) return;
+  document.getElementById("btn-analyze").disabled = true;
+  analyze(pageUrl, text)
+    .then(fields => {
+      fillFields(fields);
+      endProgress(true);
+      document.getElementById("btn-label").textContent = "Confirmer et envoyer";
+    })
+    .catch(err => {
+      endProgress(false);
+      document.getElementById("status").className = "err";
+      document.getElementById("status").textContent = "Erreur : " + err.message;
+    })
+    .finally(() => {
+      document.getElementById("btn-analyze").disabled = false;
+    });
+});
+
+document.getElementById("btn-send").addEventListener("click", () => {
+  const btn = document.getElementById("btn-send");
+  const status = document.getElementById("status");
+  btn.disabled = true;
+  status.className = "";
+  status.textContent = "Envoi...";
+
+  const payload = { url: pageUrl, timestamp: new Date().toISOString() };
+  FIELD_KEYS.forEach(k => {
+    payload[k] = (document.getElementById("f-" + k).value || "").trim();
+  });
+  payload.source = payload.source || detectSource(pageUrl) || "manual_pwa";
+
+  if (!payload.poste && !payload.entreprise) {
+    status.className = "err";
+    status.textContent = "Remplis au moins Poste ou Entreprise.";
+    btn.disabled = false;
+    return;
+  }
+
+  fetch(WEBHOOK_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  })
+    .then(r => r.json())
+    .then(res => {
+      status.className = "ok";
+      status.textContent = res.job_id ? "Envoye ✓  ID : " + res.job_id : "Envoye ✓";
+      document.getElementById("btn-label").textContent = "Envoye ✓";
+    })
+    .catch(err => {
+      status.className = "err";
+      status.textContent = "Erreur envoi : " + (err.message || "reseau");
+      btn.disabled = false;
+    });
+});
+</script>
+</body>
+</html>

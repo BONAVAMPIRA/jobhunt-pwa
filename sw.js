@@ -1,5 +1,5 @@
-const CACHE = "jh-v1";
-const PRECACHE = ["/", "/index.html", "/share.html", "/manifest.json", "/icon.png"];
+const CACHE = "jh-v2";
+const PRECACHE = ["/", "/index.html", "/share.html", "/scoring.html", "/chat.html", "/systeme.html", "/manifest.json", "/icon.png"];
 
 self.addEventListener("install", e =>
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(PRECACHE)).then(() => self.skipWaiting()))

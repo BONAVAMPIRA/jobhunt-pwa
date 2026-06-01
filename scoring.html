@@ -291,6 +291,7 @@ function renderCard(job) {
 
   const forces = (job.forces || []).slice(0, 5);
   const gaps = (job.gaps || []).slice(0, 4);
+  const gapText = g => (typeof g === 'string') ? g : ((g && (g.gap || g.text)) || '');
   const positionnement = job.positionnement || '';
 
   const card = document.createElement('div');
@@ -327,7 +328,7 @@ function renderCard(job) {
         <div class="section">
           <div class="section-title section-gaps">⚠️ Gaps</div>
           <div class="item-list">
-            ${gaps.map(g => `<div class="item gap">${g}</div>`).join('')}
+            ${gaps.map(g => `<div class="item gap">${gapText(g)}</div>`).join('')}
           </div>
         </div>` : ''}
     </div>

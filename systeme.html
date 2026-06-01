@@ -251,7 +251,11 @@ async function refreshAll() {
 }
 
 refreshAll();
-if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js');
+if ('serviceWorker' in navigator) {
+  let __swReloading = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => { if (__swReloading) return; __swReloading = true; location.reload(); });
+  navigator.serviceWorker.register('/sw.js').then(r => r.update && r.update()).catch(() => {});
+}
 </script>
 </body>
 </html>

@@ -87,7 +87,9 @@
 
 <script>
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('/sw.js');
+    let __swReloading = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => { if (__swReloading) return; __swReloading = true; location.reload(); });
+    navigator.serviceWorker.register('/sw.js').then(r => r.update && r.update()).catch(() => {});
   }
 
   let deferredPrompt;

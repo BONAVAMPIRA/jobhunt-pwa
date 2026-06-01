@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cockpit — Système</title>
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#7eb8f7">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #1a1a2e; color: #e0e0e0; font-family: system-ui, sans-serif;
+         font-size: 14px; height: 100dvh; display: flex; flex-direction: column; }
+  .header { padding: 10px 16px; border-bottom: 1px solid #2d3748;
+             display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
+  .header h1 { font-size: 15px; color: #7eb8f7; }
+  #deck { flex: 1; overflow-y: auto; padding: 12px 14px; display: flex; flex-direction: column; gap: 14px; }
+
+  .section-title {
+    font-size: 10px; font-weight: 800; letter-spacing: .08em;
+    color: #6b7280; margin-bottom: 8px;
+  }
+  .card { background: #16213e; border: 1px solid #2d3748; border-radius: 12px; padding: 14px; }
+
+  /* Services */
+  .service-row { display: flex; align-items: center; justify-content: space-between;
+                 padding: 6px 0; border-bottom: 1px solid #1f2937; }
+  .service-row:last-child { border: none; }
+  .svc-name { font-size: 13px; }
+  .svc-status { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 8px; }
+  .svc-active   { background: #064e3b; color: #34d399; }
+  .svc-inactive { background: #2d1b1b; color: #f87171; }
+  .svc-unknown  { background: #1f2937; color: #9ca3af; }
+
+  /* Crons */
+  .cron-row { display: flex; align-items: flex-start; gap: 8px; padding: 8px 0;
+               border-bottom: 1px solid #1f2937; }
+  .cron-row:last-child { border: none; }
+  .cron-info { flex: 1; min-width: 0; }
+  .cron-name { font-size: 13px; color: #e0e0e0; margin-bottom: 2px; }
+  .cron-schedule { font-size: 11px; color: #6b7280; font-family: monospace; }
+  .cron-actions { display: flex; gap: 4px; flex-shrink: 0; }
+  .cron-btn { padding: 4px 8px; border: none; border-radius: 6px; font-size: 11px;
+               font-weight: 600; cursor: pointer; }
+  .btn-run { background: #1e3a5f; color: #93c5fd; }
+  .btn-del { background: #2d1b1b; color: #f87171; }
+  .btn-run:active, .btn-del:active { opacity: .7; }
+
+  /* Ajouter cron */
+  .add-form { display: flex; flex-direction: column; gap: 8px; }
+  .add-form input { background: #0f172a; border: 1px solid #2d3748; border-radius: 6px;
+                    color: #e0e0e0; padding: 8px 10px; font-size: 12px; font-family: monospace; }
+  .add-form input:focus { outline: none; border-color: #7eb8f7; }
+  .add-form label { font-size: 11px; color: #6b7280; }
+  .btn-add { background: #2563eb; border: none; border-radius: 8px; color: #fff;
+              font-size: 13px; font-weight: 700; padding: 10px; cursor: pointer; }
+
+  /* Quick actions */
+  .actions-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .action-btn { background: #16213e; border: 1px solid #2d3748; border-radius: 10px;
+                padding: 12px 10px; text-align: center; cursor: pointer; }
+  .action-btn:active { opacity: .7; }
+  .action-btn .icon { font-size: 22px; margin-bottom: 4px; }
+  .action-btn .label { font-size: 11px; color: #9ca3af; }
+
+  .toast { position: fixed; bottom: 70px; left: 50%; transform: translateX(-50%);
+            background: #059669; color: #fff; padding: 8px 16px; border-radius: 20px;
+            font-size: 12px; opacity: 0; transition: opacity .3s; pointer-events: none; }
+  .toast.show { opacity: 1; }
+
+  .nav { display: flex; border-top: 1px solid #2d3748; flex-shrink: 0; background: #16213e; }
+  .nav a { flex: 1; display: flex; flex-direction: column; align-items: center;
+            padding: 8px 4px; text-decoration: none; font-size: 10px; color: #6b7280; gap: 3px; }
+  .nav a.active { color: #7eb8f7; }
+  .nav a span { font-size: 20px; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>Système</h1>
+  <button onclick="refreshAll()" style="background:none;border:1px solid #2d3748;color:#6b7280;padding:4px 10px;border-radius:6px;font-size:11px;cursor:pointer;">↻ Refresh</button>
+</div>
+
+<div id="deck">
+
+  <!-- Services -->
+  <div class="card">
+    <div class="section-title">SERVICES VPS</div>
+    <div id="services-list">Chargement...</div>
+  </div>
+
+  <!-- Actions rapides -->
+  <div class="card">
+    <div class="section-title">ACTIONS RAPIDES</div>
+    <div class="actions-grid">
+      <div class="action-btn" onclick="quickAction('briefing')">
+        <div class="icon">📊</div>
+        <div class="label">Briefing maintenant</div>
+      </div>
+      <div class="action-btn" onclick="quickAction('score')">
+        <div class="icon">🎯</div>
+        <div class="label">Lancer scoring</div>
+      </div>
+      <div class="action-btn" onclick="quickAction('sync')">
+        <div class="icon">🔄</div>
+        <div class="label">Sync Google Sheets</div>
+      </div>
+      <div class="action-btn" onclick="window.location='/scoring.html'">
+        <div class="icon">📋</div>
+        <div class="label">Voir les offres</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Crons -->
+  <div class="card">
+    <div class="section-title">TÂCHES PLANIFIÉES (CRONS)</div>
+    <div id="crons-list">Chargement...</div>
+  </div>
+
+  <!-- Ajouter cron -->
+  <div class="card">
+    <div class="section-title">AJOUTER UN CRON</div>
+    <div class="add-form">
+      <div>
+        <label>Planification (cron syntax)</label>
+        <input id="new-schedule" placeholder="0 9 * * * (tous les jours à 9h)" value="0 9 * * *">
+      </div>
+      <div>
+        <label>Commande (chemin absolu)</label>
+        <input id="new-command" placeholder="/usr/bin/python3 /home/ubuntu/cockpit/scripts/...">
+      </div>
+      <div>
+        <label>Nom (optionnel)</label>
+        <input id="new-name" placeholder="Ma tâche">
+      </div>
+      <button class="btn-add" onclick="addCron()">+ Ajouter le cron</button>
+    </div>
+  </div>
+
+</div>
+
+<div class="toast" id="toast"></div>
+
+<nav class="nav">
+  <a href="/chat.html"><span>💬</span>Chat</a>
+  <a href="/scoring.html"><span>📋</span>Scoring</a>
+  <a href="/systeme.html" class="active"><span>⚙️</span>Système</a>
+</nav>
+
+<script>
+function toast(msg, color='#059669') {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.style.background = color;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2500);
+}
+
+async function loadServices() {
+  try {
+    const res = await fetch('/api/services');
+    const d = await res.json();
+    const el = document.getElementById('services-list');
+    el.innerHTML = Object.entries(d).map(([name, status]) => {
+      const cls = status === 'active' ? 'svc-active' : status === 'inactive' ? 'svc-inactive' : 'svc-unknown';
+      const label = status === 'active' ? '● Actif' : status === 'inactive' ? '○ Arrêté' : status.split('\n')[0].slice(0,20);
+      return `<div class="service-row">
+        <span class="svc-name">${name}</span>
+        <span class="svc-status ${cls}">${label}</span>
+      </div>`;
+    }).join('');
+  } catch { document.getElementById('services-list').textContent = 'Erreur chargement'; }
+}
+
+async function loadCrons() {
+  try {
+    const res = await fetch('/api/crons');
+    const d = await res.json();
+    const el = document.getElementById('crons-list');
+    if (!d.crons.length) { el.textContent = 'Aucun cron configuré.'; return; }
+    el.innerHTML = d.crons.map(c => `
+      <div class="cron-row">
+        <div class="cron-info">
+          <div class="cron-name">${c.name}</div>
+          <div class="cron-schedule">${c.schedule}</div>
+        </div>
+        <div class="cron-actions">
+          <button class="cron-btn btn-run" onclick="triggerCron(${c.id})">▶</button>
+          <button class="cron-btn btn-del" onclick="deleteCron(${c.id})">✕</button>
+        </div>
+      </div>`).join('');
+  } catch { document.getElementById('crons-list').textContent = 'Erreur chargement'; }
+}
+
+async function triggerCron(id) {
+  try {
+    await fetch(`/api/crons/${id}/trigger`, { method: 'POST' });
+    toast('Tâche déclenchée ✓');
+  } catch { toast('Erreur', '#dc2626'); }
+}
+
+async function deleteCron(id) {
+  if (!confirm('Supprimer ce cron ?')) return;
+  try {
+    await fetch(`/api/crons/${id}`, { method: 'DELETE' });
+    toast('Cron supprimé');
+    loadCrons();
+  } catch { toast('Erreur', '#dc2626'); }
+}
+
+async function addCron() {
+  const schedule = document.getElementById('new-schedule').value.trim();
+  const command  = document.getElementById('new-command').value.trim();
+  const name     = document.getElementById('new-name').value.trim();
+  if (!schedule || !command) { toast('Remplis planification + commande', '#f59e0b'); return; }
+  try {
+    await fetch('/api/crons', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ schedule, command, name })
+    });
+    toast('Cron ajouté ✓');
+    document.getElementById('new-command').value = '';
+    document.getElementById('new-name').value = '';
+    loadCrons();
+  } catch { toast('Erreur', '#dc2626'); }
+}
+
+async function quickAction(type) {
+  const endpoints = {
+    briefing: '/api/crons/0/trigger',
+    score:    { url: 'http://147.15.136.49:5678/webhook/m3a-score-trigger', external: true },
+    sync:     '/api/crons/2/trigger',
+  };
+  toast('Déclenchement...');
+  try {
+    const e = endpoints[type];
+    if (typeof e === 'object' && e.external) {
+      await fetch(e.url);
+    } else if (typeof e === 'string') {
+      await fetch(e, { method: 'POST' });
+    }
+    toast('Lancé ✓');
+  } catch { toast('Erreur', '#dc2626'); }
+}
+
+async function refreshAll() {
+  await Promise.all([loadServices(), loadCrons()]);
+  toast('Actualisé ✓');
+}
+
+refreshAll();
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js');
+</script>
+</body>
+</html>

@@ -1,0 +1,32 @@
+export const config = { runtime: 'edge' };
+
+// Proxy vers l'API VPS pour /api/jobs et /api/docs-status et /api/job-action
+export default async function handler(req) {
+  const COCKPIT_URL = process.env.COCKPIT_API_URL;
+  if (!COCKPIT_URL) {
+    return new Response(JSON.stringify({ error: 'COCKPIT_API_URL manquante' }), {
+      status: 500, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+    });
+  }
+
+  const url = new URL(req.url);
+  const path = url.pathname; // /api/jobs ou /api/docs-status
+  const search = url.search;
+
+  try {
+    const upstream = await fetch(`${COCKPIT_URL}${path}${search}`, {
+      method: req.method,
+      headers: { 'Content-Type': 'application/json' },
+      body: req.method === 'POST' ? await req.text() : undefined,
+    });
+    const data = await upstream.text();
+    return new Response(data, {
+      status: upstream.status,
+      headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+    });
+  } catch (err) {
+    return new Response(JSON.stringify({ error: err.message }), {
+      status: 502, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+    });
+  }
+}

@@ -1,0 +1,529 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cockpit — Scoring</title>
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#7eb8f7">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #1a1a2e;
+    color: #e0e0e0;
+    font-family: system-ui, sans-serif;
+    font-size: 14px;
+    height: 100dvh;
+    display: flex;
+    flex-direction: column;
+  }
+  .header {
+    padding: 10px 16px;
+    border-bottom: 1px solid #2d3748;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-shrink: 0;
+  }
+  .header h1 { font-size: 15px; color: #7eb8f7; }
+  .header-right { display: flex; align-items: center; gap: 8px; }
+  .count-badge {
+    background: #2563eb;
+    color: #fff;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 12px;
+  }
+  .sort-btn {
+    background: none;
+    border: 1px solid #2d3748;
+    color: #9ca3af;
+    font-size: 11px;
+    padding: 3px 8px;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+  .sort-btn.active { border-color: #7eb8f7; color: #7eb8f7; }
+
+  #deck {
+    flex: 1;
+    overflow-y: auto;
+    padding: 12px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  /* CARD */
+  .card {
+    background: #16213e;
+    border: 1px solid #2d3748;
+    border-radius: 14px;
+    overflow: hidden;
+    transition: opacity 0.3s;
+  }
+  .card-top {
+    padding: 14px 14px 10px;
+  }
+  .card-meta {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 8px;
+    flex-wrap: wrap;
+  }
+  .prio-badge {
+    font-size: 10px;
+    font-weight: 800;
+    padding: 2px 7px;
+    border-radius: 8px;
+    letter-spacing: 0.05em;
+  }
+  .prio-1 { background: #7f1d1d; color: #fca5a5; }
+  .prio-2 { background: #451a03; color: #fcd34d; }
+  .prio-3 { background: #1e3a5f; color: #93c5fd; }
+  .deadline-badge {
+    font-size: 10px;
+    color: #9ca3af;
+    display: flex;
+    align-items: center;
+    gap: 3px;
+  }
+  .deadline-badge.urgent { color: #f87171; }
+  .date-badge {
+    font-size: 10px;
+    color: #6b7280;
+    margin-left: auto;
+  }
+
+  .card-title {
+    font-size: 14px;
+    font-weight: 700;
+    color: #e0e0e0;
+    line-height: 1.3;
+    margin-bottom: 3px;
+  }
+  .card-company {
+    font-size: 12px;
+    color: #7eb8f7;
+    margin-bottom: 10px;
+  }
+
+  /* Score bar */
+  .score-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 12px;
+  }
+  .score-num {
+    font-size: 22px;
+    font-weight: 800;
+    min-width: 44px;
+  }
+  .score-hi  { color: #34d399; }
+  .score-mid { color: #f59e0b; }
+  .score-lo  { color: #9ca3af; }
+  .score-bar-track {
+    flex: 1;
+    height: 6px;
+    background: #2d3748;
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  .score-bar-fill {
+    height: 100%;
+    border-radius: 4px;
+    transition: width 0.5s ease;
+  }
+  .score-positionnement {
+    font-size: 11px;
+    color: #6b7280;
+    white-space: nowrap;
+  }
+
+  /* Sections */
+  .section {
+    margin-bottom: 10px;
+  }
+  .section-title {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    margin-bottom: 5px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .section-forces { color: #34d399; }
+  .section-gaps   { color: #f87171; }
+
+  .item-list {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+  .item {
+    font-size: 12px;
+    color: #d1d5db;
+    padding-left: 12px;
+    position: relative;
+    line-height: 1.4;
+  }
+  .item::before { content: '•'; position: absolute; left: 2px; }
+  .item.gap { color: #fca5a5; }
+  .item.gap::before { content: '⚠'; left: 0; font-size: 10px; }
+
+  /* Divider */
+  .card-divider {
+    height: 1px;
+    background: #2d3748;
+    margin: 0 14px;
+  }
+
+  /* Actions */
+  .card-actions {
+    display: flex;
+    padding: 10px 14px 12px;
+    gap: 8px;
+  }
+  .btn-action {
+    flex: 1;
+    padding: 9px 6px;
+    border: none;
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity 0.15s;
+    white-space: nowrap;
+  }
+  .btn-action:active { opacity: 0.7; }
+  .btn-postuler  { background: #059669; color: #fff; }
+  .btn-contester { background: #2d3748; color: #e0e0e0; }
+  .btn-ignorer   { background: #1f2937; color: #6b7280; }
+
+  /* Empty/info states */
+  .info-card {
+    background: #16213e;
+    border: 1px dashed #2d3748;
+    border-radius: 12px;
+    padding: 20px;
+    text-align: center;
+    color: #6b7280;
+    font-size: 13px;
+    line-height: 1.6;
+  }
+  .info-card .icon { font-size: 36px; margin-bottom: 8px; display: block; }
+  .info-card strong { color: #9ca3af; }
+
+  .nav {
+    display: flex;
+    border-top: 1px solid #2d3748;
+    flex-shrink: 0;
+    background: #16213e;
+  }
+  .nav a {
+    flex: 1; display: flex; flex-direction: column;
+    align-items: center; padding: 8px 4px;
+    text-decoration: none; font-size: 10px; color: #6b7280; gap: 3px;
+  }
+  .nav a.active { color: #7eb8f7; }
+  .nav a span { font-size: 20px; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>Scoring</h1>
+  <div class="header-right">
+    <span class="count-badge" id="count">—</span>
+    <button class="sort-btn active" id="sort-prio" onclick="setSort('prio')">Urgence</button>
+    <button class="sort-btn" id="sort-score" onclick="setSort('score')">Score</button>
+  </div>
+</div>
+
+<div id="deck"></div>
+
+<nav class="nav">
+  <a href="/chat.html"><span>💬</span>Chat</a>
+  <a href="/scoring.html" class="active"><span>📋</span>Scoring</a>
+  <a href="/systeme.html"><span>⚙️</span>Système</a>
+</nav>
+
+<script>
+let jobs = [];
+let sortMode = 'prio';
+
+function daysLeft(deadline) {
+  if (!deadline) return null;
+  const d = new Date(deadline);
+  if (isNaN(d)) return null;
+  return Math.ceil((d - Date.now()) / 86400000);
+}
+
+function scoreColor(s) {
+  if (s >= 75) return 'score-hi';
+  if (s >= 55) return 'score-mid';
+  return 'score-lo';
+}
+function scoreBarColor(s) {
+  if (s >= 75) return '#34d399';
+  if (s >= 55) return '#f59e0b';
+  return '#9ca3af';
+}
+function prioClass(p) {
+  const n = parseInt(p) || (p === 'P1' ? 1 : p === 'P2' ? 2 : 3);
+  return `prio-${Math.min(n, 3)}`;
+}
+function prioLabel(p) {
+  if (!p) return 'P?';
+  return p.startsWith('P') ? p : `P${p}`;
+}
+
+function renderCard(job) {
+  const days = daysLeft(job.deadline);
+  const deadlineUrgent = days !== null && days <= 7;
+  const deadlineText = days === null ? '' : days <= 0 ? 'Expirée' : `${days}j restants`;
+  const pLabel = prioLabel(job.priorite);
+  const pClass = prioClass(job.priorite);
+
+  const forces = (job.forces || []).slice(0, 5);
+  const gaps = (job.gaps || []).slice(0, 4);
+  const positionnement = job.positionnement || '';
+
+  const card = document.createElement('div');
+  card.className = 'card';
+  card.dataset.jobId = job.job_id;
+
+  card.innerHTML = `
+    <div class="card-top">
+      <div class="card-meta">
+        ${pLabel !== 'P?' ? `<span class="prio-badge ${pClass}">${pLabel}</span>` : ''}
+        ${deadlineText ? `<span class="deadline-badge ${deadlineUrgent ? 'urgent' : ''}">📅 ${deadlineText}</span>` : ''}
+        ${job.deadline ? `<span class="date-badge">${job.deadline}</span>` : ''}
+      </div>
+      <div class="card-title">${job.titre || '—'}</div>
+      <div class="card-company">${job.entreprise || ''}</div>
+
+      <div class="score-row">
+        <div class="score-num ${scoreColor(job.score)}">${job.score || 0}<small style="font-size:11px;font-weight:400;color:#6b7280">/100</small></div>
+        <div class="score-bar-track">
+          <div class="score-bar-fill" style="width:${job.score || 0}%;background:${scoreBarColor(job.score)};"></div>
+        </div>
+        ${positionnement ? `<div class="score-positionnement">${positionnement}</div>` : ''}
+      </div>
+
+      ${forces.length ? `
+        <div class="section">
+          <div class="section-title section-forces">✅ Forces</div>
+          <div class="item-list">
+            ${forces.map(f => `<div class="item">${f}</div>`).join('')}
+          </div>
+        </div>` : ''}
+
+      ${gaps.length ? `
+        <div class="section">
+          <div class="section-title section-gaps">⚠️ Gaps</div>
+          <div class="item-list">
+            ${gaps.map(g => `<div class="item gap">${g}</div>`).join('')}
+          </div>
+        </div>` : ''}
+    </div>
+
+    <div class="card-divider"></div>
+
+    <div class="card-actions">
+      <button class="btn-action btn-postuler"  onclick="action('${job.job_id}','postuler',  event)">✅ Postuler</button>
+      <button class="btn-action btn-contester" onclick="action('${job.job_id}','contester', event)">✏️ Contester</button>
+      <button class="btn-action btn-ignorer"   onclick="action('${job.job_id}','ignorer',   event)">✕ Ignorer</button>
+    </div>`;
+  return card;
+}
+
+function sortJobs(list) {
+  return [...list].sort((a, b) => {
+    if (sortMode === 'prio') {
+      const pMap = {'P1':1,'P2':2,'P3':3,'1':1,'2':2,'3':3};
+      const pa = pMap[a.priorite] || 99;
+      const pb = pMap[b.priorite] || 99;
+      if (pa !== pb) return pa - pb;
+      const da = daysLeft(a.deadline) ?? 999;
+      const db = daysLeft(b.deadline) ?? 999;
+      if (da !== db) return da - db;
+      return (b.score || 0) - (a.score || 0);
+    }
+    return (b.score || 0) - (a.score || 0);
+  });
+}
+
+function render() {
+  const deck = document.getElementById('deck');
+  deck.innerHTML = '';
+
+  const sorted = sortJobs(jobs);
+
+  if (!sorted.length) {
+    deck.innerHTML = `
+      <div class="info-card">
+        <span class="icon">📡</span>
+        <strong>Connexion Google Sheets requise</strong><br><br>
+        Les offres à scorer viennent de Google Sheets (statut "score").<br>
+        La connexion sera configurée à la prochaine session.<br><br>
+        <span style="font-size:11px;color:#4b5563">Sheet ID : 15gqqGOb92sfS3nkhNvRrgpssTcfy1fDHDq0OQ34drfw</span>
+      </div>`;
+    document.getElementById('count').textContent = '0';
+    return;
+  }
+
+  sorted.forEach(j => deck.appendChild(renderCard(j)));
+  document.getElementById('count').textContent = sorted.length;
+}
+
+function setSort(mode) {
+  sortMode = mode;
+  document.getElementById('sort-prio').classList.toggle('active', mode === 'prio');
+  document.getElementById('sort-score').classList.toggle('active', mode === 'score');
+  render();
+}
+
+async function action(jobId, type, evt) {
+  const card = evt.target.closest('.card');
+  const btns = card.querySelectorAll('button');
+  btns.forEach(b => b.disabled = true);
+
+  if (type === 'postuler') {
+    // Lancer génération + afficher progression dans la carte
+    showGenerating(card, jobId);
+  } else {
+    // Contester ou Ignorer : retirer la carte
+    card.style.transition = 'opacity 0.3s';
+    card.style.opacity = '0';
+    setTimeout(() => {
+      jobs = jobs.filter(j => j.job_id !== jobId);
+      card.remove();
+      document.getElementById('count').textContent = jobs.length;
+      if (!jobs.length) render();
+    }, 300);
+  }
+
+  try {
+    await fetch('/api/job-action', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ job_id: jobId, action: type }),
+    });
+  } catch (_) {}
+}
+
+function showGenerating(card, jobId) {
+  const actionsDiv = card.querySelector('.card-actions');
+  actionsDiv.innerHTML = `
+    <div style="width:100%;padding:8px 0;text-align:center;color:#34d399;font-size:12px;">
+      <div id="gen-status-${jobId}" style="margin-bottom:6px;">⏳ Génération en cours (CV, LM, Guide, Salaire)…</div>
+      <div style="height:4px;background:#1f2937;border-radius:2px;overflow:hidden;">
+        <div id="gen-bar-${jobId}" style="height:100%;background:#059669;width:5%;border-radius:2px;transition:width 0.5s;"></div>
+      </div>
+    </div>`;
+
+  let pct = 5;
+  const bar = document.getElementById(`gen-bar-${jobId}`);
+  const status = document.getElementById(`gen-status-${jobId}`);
+
+  // Progression visuelle (estimée 2 min)
+  const progInterval = setInterval(() => {
+    pct = Math.min(pct + (90 - pct) * 0.03 + 0.5, 88);
+    if (bar) bar.style.width = pct + '%';
+  }, 2000);
+
+  // Polling pour vérifier si docs prêts
+  let attempts = 0;
+  const checkInterval = setInterval(async () => {
+    attempts++;
+    try {
+      const res = await fetch(`/api/docs-status?job_id=${jobId}`);
+      const data = await res.json();
+      if (data.ready) {
+        clearInterval(progInterval);
+        clearInterval(checkInterval);
+        if (bar) bar.style.width = '100%';
+        if (bar) bar.style.background = '#34d399';
+        if (status) {
+          const docsHtml = Object.keys(data.docs).map(d =>
+            `<span style="background:#064e3b;color:#34d399;padding:2px 6px;border-radius:4px;font-size:11px;margin:2px;">${d.toUpperCase()} ✓</span>`
+          ).join('');
+          status.innerHTML = `✅ Documents prêts !<br><div style="margin-top:6px;">${docsHtml}</div>`;
+        }
+        // Retirer de la file après 3s
+        setTimeout(() => {
+          jobs = jobs.filter(j => j.job_id !== jobId);
+          card.style.opacity = '0';
+          setTimeout(() => { card.remove(); document.getElementById('count').textContent = jobs.length; }, 300);
+        }, 3000);
+      }
+    } catch (_) {}
+    if (attempts > 20) {  // Max 5 min
+      clearInterval(progInterval);
+      clearInterval(checkInterval);
+      if (status) status.textContent = '⚠ Vérifier dans Candidatures — génération longue.';
+    }
+  }, 15000); // check toutes les 15s
+}
+
+async function loadJobs() {
+  try {
+    const res = await fetch('/api/jobs');
+    if (!res.ok) throw new Error('API indisponible');
+    const data = await res.json();
+    jobs = data.jobs || [];
+  } catch {
+    jobs = [];
+  }
+  render();
+}
+
+async function loadBriefing() {
+  try {
+    const res = await fetch('/api/briefing');
+    if (!res.ok) return;
+    const d = await res.json();
+    if (d.error) return;
+
+    const pipe = d.pipeline || {};
+    const urgent = d.deadlines_urgentes || [];
+    const top = d.top_offres || [];
+
+    let html = `<div style="background:#16213e;border:1px solid #2d3748;border-radius:12px;padding:14px;margin-bottom:14px;">
+      <div style="font-size:11px;font-weight:800;color:#7eb8f7;letter-spacing:.08em;margin-bottom:10px;">⚕ BRIEFING HERMES — ${d.date || ''}</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">`;
+    const statuts = {score:'📋 À scorer',postulé:'✅ Postulés',abandonné:'❌ Abandonnés',expire:'⏰ Expirés'};
+    for (const [k,v] of Object.entries(pipe)) {
+      const label = statuts[k] || k;
+      html += `<div style="background:#1f2937;border-radius:8px;padding:6px 10px;font-size:12px;">
+        <span style="color:#6b7280;font-size:10px;">${label}</span><br>
+        <span style="font-weight:700;color:#e0e0e0;">${v}</span></div>`;
+    }
+    html += '</div>';
+
+    if (urgent.length) {
+      html += `<div style="background:#2d1b1b;border-radius:8px;padding:8px 10px;margin-bottom:8px;">
+        <div style="font-size:10px;font-weight:800;color:#f87171;margin-bottom:4px;">⏰ DEADLINE URGENTE</div>`;
+      for (const u of urgent) {
+        html += `<div style="font-size:12px;color:#fca5a5;">${u.titre} — ${u.entreprise} (<b>${u.jours}j</b>)</div>`;
+      }
+      html += '</div>';
+    }
+
+    html += '</div>';
+    document.getElementById('deck').insertAdjacentHTML('afterbegin', html);
+  } catch (_) {}
+}
+
+loadBriefing();
+loadJobs();
+
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js');
+</script>
+</body>
+</html>

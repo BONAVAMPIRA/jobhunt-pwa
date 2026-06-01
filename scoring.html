@@ -383,8 +383,18 @@ function render() {
     return;
   }
 
-  sorted.forEach(j => deck.appendChild(renderCard(j)));
-  document.getElementById('count').textContent = sorted.length;
+  let __ok = 0, __err = '';
+  sorted.forEach(j => {
+    try { deck.appendChild(renderCard(j)); __ok++; }
+    catch (e) { __err = (e && e.message) || String(e); }
+  });
+  document.getElementById('count').textContent = __ok;
+  if (__ok === 0) {
+    deck.innerHTML = `<div class="info-card"><span class="icon">⚠️</span>
+      <strong>Offres reçues mais non affichées</strong><br><br>
+      ${sorted.length} offre(s) reçue(s), 0 rendue(s).<br>
+      Détail : ${__err || 'inconnu'}</div>`;
+  }
 }
 
 function setSort(mode) {
@@ -589,8 +599,7 @@ async function loadBriefing() {
   } catch (_) {}
 }
 
-loadBriefing();
-loadJobs();
+loadJobs().then(loadBriefing);
 
 if ('serviceWorker' in navigator) {
   let __swReloading = false;

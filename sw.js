@@ -1,4 +1,4 @@
-const CACHE = "jh-v2";
+const CACHE = "jh-v3";
 const PRECACHE = ["/", "/index.html", "/share.html", "/scoring.html", "/chat.html", "/systeme.html", "/manifest.json", "/icon.png"];
 
 self.addEventListener("install", e =>

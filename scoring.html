@@ -255,6 +255,7 @@
 <script>
 let jobs = [];
 let sortMode = 'prio';
+let loadError = null;
 
 function daysLeft(deadline) {
   if (!deadline) return null;
@@ -366,14 +367,18 @@ function render() {
   const sorted = sortJobs(jobs);
 
   if (!sorted.length) {
-    deck.innerHTML = `
-      <div class="info-card">
-        <span class="icon">📡</span>
-        <strong>Connexion Google Sheets requise</strong><br><br>
-        Les offres à scorer viennent de Google Sheets (statut "score").<br>
-        La connexion sera configurée à la prochaine session.<br><br>
-        <span style="font-size:11px;color:#4b5563">Sheet ID : 15gqqGOb92sfS3nkhNvRrgpssTcfy1fDHDq0OQ34drfw</span>
-      </div>`;
+    deck.innerHTML = loadError
+      ? `<div class="info-card">
+          <span class="icon">⚠️</span>
+          <strong>Impossible de charger les offres</strong><br><br>
+          Erreur : ${loadError}<br><br>
+          <span style="font-size:11px;color:#4b5563">L'API /api/jobs n'a pas répondu correctement.</span>
+        </div>`
+      : `<div class="info-card">
+          <span class="icon">✅</span>
+          <strong>Aucune offre à scorer</strong><br><br>
+          Toutes les offres ont été traitées.
+        </div>`;
     document.getElementById('count').textContent = '0';
     return;
   }
@@ -534,12 +539,15 @@ function applyRevision(card, jobId, data) {
 
 async function loadJobs() {
   try {
-    const res = await fetch('/api/jobs');
-    if (!res.ok) throw new Error('API indisponible');
+    const res = await fetch('/api/jobs', { cache: 'no-store' });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
-    jobs = data.jobs || [];
-  } catch {
+    if (data && data.error) throw new Error(data.error);
+    jobs = (data && data.jobs) || [];
+    loadError = null;
+  } catch (e) {
     jobs = [];
+    loadError = (e && e.message) || 'inconnue';
   }
   render();
 }

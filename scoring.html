@@ -336,7 +336,7 @@ function renderCard(job) {
 
     <div class="card-actions">
       <button class="btn-action btn-postuler"  onclick="action('${job.job_id}','postuler',  event)">✅ Postuler</button>
-      <button class="btn-action btn-contester" onclick="action('${job.job_id}','contester', event)">✏️ Contester</button>
+      <button class="btn-action btn-contester" onclick="openContest('${job.job_id}', event)">✏️ Contester</button>
       <button class="btn-action btn-ignorer"   onclick="action('${job.job_id}','ignorer',   event)">✕ Ignorer</button>
     </div>`;
   return card;
@@ -469,6 +469,66 @@ function showGenerating(card, jobId) {
       if (status) status.textContent = '⚠ Vérifier dans Candidatures — génération longue.';
     }
   }, 15000); // check toutes les 15s
+}
+
+// ── Contester : commentaire inline → re-scoring Claude (WF-M3d-Rescore) ──
+function openContest(jobId, evt) {
+  const card = evt.target.closest('.card');
+  const actionsDiv = card.querySelector('.card-actions');
+  actionsDiv.dataset.original = actionsDiv.innerHTML;
+  actionsDiv.style.flexDirection = 'column';
+  actionsDiv.innerHTML = `
+    <textarea id="contest-${jobId}" placeholder="Pourquoi ce score te semble faux ? (ex: 3 ans de Power BI non comptés, mission proche de mon mandat BAD…)"
+      style="width:100%;min-height:64px;background:#0f1729;border:1px solid #2d3748;border-radius:8px;color:#e0e0e0;padding:8px;font-size:12px;font-family:inherit;resize:vertical;"></textarea>
+    <div style="display:flex;gap:8px;width:100%;margin-top:8px;">
+      <button class="btn-action btn-postuler" onclick="submitContest('${jobId}', event)">↻ Re-scorer</button>
+      <button class="btn-action btn-ignorer" onclick="cancelContest('${jobId}', event)">Annuler</button>
+    </div>`;
+  const ta = document.getElementById(`contest-${jobId}`);
+  if (ta) ta.focus();
+}
+
+function cancelContest(jobId, evt) {
+  const actionsDiv = evt.target.closest('.card-actions');
+  actionsDiv.style.flexDirection = 'row';
+  if (actionsDiv.dataset.original) actionsDiv.innerHTML = actionsDiv.dataset.original;
+}
+
+async function submitContest(jobId, evt) {
+  const card = evt.target.closest('.card');
+  const ta = document.getElementById(`contest-${jobId}`);
+  const comment = ((ta && ta.value) || '').trim();
+  if (!comment) { if (ta) ta.focus(); return; }
+  const actionsDiv = card.querySelector('.card-actions');
+  actionsDiv.style.flexDirection = 'row';
+  actionsDiv.innerHTML = `<div style="width:100%;padding:8px 0;text-align:center;color:#7eb8f7;font-size:12px;">⏳ Claude révise le score…</div>`;
+  try {
+    const res = await fetch('/api/rescore', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ job_id: jobId, comment }),
+    });
+    if (!res.ok) throw new Error('rescore failed');
+    const data = await res.json();
+    applyRevision(card, jobId, data);
+  } catch (e) {
+    actionsDiv.innerHTML = `<div style="width:100%;padding:8px 0;text-align:center;color:#f87171;font-size:12px;">⚠ Échec de la révision — <button class="sort-btn" onclick="openContest('${jobId}', event)">Réessayer</button></div>`;
+  }
+}
+
+function applyRevision(card, jobId, data) {
+  const job = jobs.find(j => j.job_id === jobId);
+  if (!job) return;
+  if (data.score !== undefined && data.score !== '') job.score = parseInt(data.score) || job.score;
+  if (data.positionnement) job.positionnement = data.positionnement;
+  if (data.recommandation) job.recommandation = data.recommandation;
+  if (data.gaps_json) {
+    try { job.gaps = Array.isArray(data.gaps_json) ? data.gaps_json : JSON.parse(data.gaps_json); } catch (_) {}
+  }
+  const fresh = renderCard(job);
+  card.replaceWith(fresh);
+  fresh.style.boxShadow = '0 0 0 2px #34d399';
+  setTimeout(() => { fresh.style.boxShadow = ''; }, 1500);
 }
 
 async function loadJobs() {

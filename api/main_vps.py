@@ -209,6 +209,28 @@ def job_action(req: JobAction):
     return {"ok": True, "job_id": req.job_id, "action": req.action,
             "statut": nouveau_statut, "docs_launched": docs_launched}
 
+class RescoreRequest(BaseModel):
+    job_id: str
+    comment: str
+
+@app.post("/api/rescore")
+def rescore(req: RescoreRequest):
+    """Contestation d'un score : relaie vers WF-M3d-Rescore (n8n a l'OAuth Sheets en écriture).
+    Claude révise le score à la lumière du commentaire, met à jour SCORED_JOBS + scoring_memory.json."""
+    url = f"{N8N_BASE}/m3d-rescore"
+    payload = json.dumps({"job_id": req.job_id, "comment": req.comment}).encode()
+    try:
+        with urllib.request.urlopen(
+            urllib.request.Request(url, data=payload,
+                headers={"Content-Type": "application/json"}), timeout=90) as r:
+            body = r.read().decode("utf-8")
+        try:
+            return json.loads(body)
+        except Exception:
+            return {"ok": False, "raw": body[:300]}
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"rescore failed: {str(e)[:120]}")
+
 # ── Services & Crons ──
 
 @app.get("/api/services")

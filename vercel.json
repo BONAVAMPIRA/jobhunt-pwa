@@ -8,6 +8,7 @@
     { "source": "/api/briefing",       "destination": "/api/jobs.js" },
     { "source": "/api/docs-status",    "destination": "/api/jobs.js" },
     { "source": "/api/job-action",     "destination": "/api/jobs.js" },
+    { "source": "/api/rescore",        "destination": "/api/jobs.js" },
     { "source": "/api/generate-docs",  "destination": "/api/jobs.js" },
     { "source": "/api/crons",          "destination": "/api/jobs.js" },
     { "source": "/api/crons/:path*",   "destination": "/api/jobs.js" },

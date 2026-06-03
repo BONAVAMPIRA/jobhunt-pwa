@@ -248,7 +248,7 @@
 <body>
 
 <div class="header">
-  <h1>Scoring <span style="font-size:9px;color:#4b5563;font-weight:400;">build v11</span></h1>
+  <h1>Scoring <span style="font-size:9px;color:#4b5563;font-weight:400;">build v12</span></h1>
   <div class="header-right">
     <span class="count-badge" id="count">—</span>
     <button class="sort-btn active" id="sort-prio" onclick="setSort('prio')">Urgence</button>
@@ -576,7 +576,7 @@ function applyRevision(card, jobId, data, oldScore) {
   if (top) {
     const delta = (oldScore !== undefined && oldScore !== null && oldScore !== '') ? (oldScore + ' → ' + newScore) : ('→ ' + newScore);
     top.insertAdjacentHTML('afterbegin',
-      `<div style="background:#064e3b;color:#34d399;font-size:11px;font-weight:600;padding:5px 8px;border-radius:6px;margin-bottom:8px;">↻ Score révisé : ${delta} ✓ (contesté une fois)</div>`);
+      `<div style="background:#064e3b;color:#34d399;font-size:11px;font-weight:600;padding:6px 9px;border-radius:6px;margin-bottom:8px;line-height:1.5;">↻ Score révisé : ${delta}<br><span style="font-weight:400;color:#a7f3d0;">Lacunes mises à jour ci-dessous. Tu peux maintenant ⚙️ Générer les documents, ou ✕ Abandonner.</span></div>`);
   }
   fresh.style.boxShadow = '0 0 0 2px #34d399';
   setTimeout(() => { fresh.style.boxShadow = ''; }, 2500);

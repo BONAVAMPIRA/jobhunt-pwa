@@ -244,7 +244,7 @@
   </div>
 </div>
 
-<div id="deck"></div>
+<div id="deck"><div class="info-card" id="boot">⏳ Chargement des offres…</div></div>
 
 <nav class="nav">
   <a href="/chat.html"><span>💬</span>Chat</a>
@@ -548,16 +548,23 @@ function applyRevision(card, jobId, data) {
 }
 
 async function loadJobs() {
+  const boot = m => { const b = document.getElementById('boot'); if (b) b.textContent = m; };
   try {
-    const res = await fetch('/api/jobs', { cache: 'no-store' });
+    boot('⏳ Connexion à l\'API…');
+    const ctrl = new AbortController();
+    const to = setTimeout(() => ctrl.abort(), 15000);
+    const res = await fetch('/api/jobs', { cache: 'no-store', signal: ctrl.signal });
+    clearTimeout(to);
+    boot('⏳ Lecture des offres… (HTTP ' + res.status + ')');
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
     if (data && data.error) throw new Error(data.error);
     jobs = (data && data.jobs) || [];
     loadError = null;
+    boot('✅ ' + jobs.length + ' offres reçues, rendu…');
   } catch (e) {
     jobs = [];
-    loadError = (e && e.message) || 'inconnue';
+    loadError = (e && e.name === 'AbortError') ? 'Timeout 15s — l\'API n\'a pas répondu à temps' : ((e && e.message) || 'inconnue');
   }
   render();
 }

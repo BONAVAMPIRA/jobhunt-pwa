@@ -240,7 +240,7 @@
 <body>
 
 <div class="header">
-  <h1>Scoring</h1>
+  <h1>Scoring <span style="font-size:9px;color:#4b5563;font-weight:400;">build v9</span></h1>
   <div class="header-right">
     <span class="count-badge" id="count">—</span>
     <button class="sort-btn active" id="sort-prio" onclick="setSort('prio')">Urgence</button>
@@ -347,7 +347,7 @@ function renderCard(job) {
     <div class="card-actions">
       <button class="btn-action btn-postuler"  onclick="action('${job.job_id}','postuler',  event)">✅ Postuler</button>
       <button class="btn-action btn-contester" onclick="openContest('${job.job_id}', event)">✏️ Contester</button>
-      <button class="btn-action btn-ignorer"   onclick="action('${job.job_id}','ignorer',   event)">✕ Ignorer</button>
+      <button class="btn-action btn-ignorer"   onclick="action('${job.job_id}','abandonner', event)">✕ Abandonner</button>
     </div>`;
   return card;
 }

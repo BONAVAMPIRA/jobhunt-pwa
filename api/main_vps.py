@@ -91,7 +91,9 @@ def get_jobs():
         jobs = []
         for row in reader:
             statut = (row.get("statut") or "").strip().lower()
-            if statut not in ("score", "scored", "a_postuler"):
+            # Scoring deck = offres à décider seulement. Les "a_postuler"/"généré"/"postulé"
+            # (docs lancés) sortent du deck — elles relèvent du Module 4.
+            if statut not in ("score", "scored"):
                 continue
             score = 0
             try:

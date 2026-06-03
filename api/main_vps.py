@@ -67,6 +67,18 @@ def call_n8n(url, job_id):
     except Exception as e:
         return f"erreur: {str(e)[:60]}"
 
+def set_status(job_id, statut):
+    """Pose le statut d'une offre dans SCORED_JOBS via WF-Status-Set (écriture OAuth n8n).
+    json.dumps -> ASCII (\\uXXXX) donc les accents passent proprement."""
+    payload = json.dumps({"job_id": job_id, "statut": statut}).encode()
+    try:
+        urllib.request.urlopen(
+            urllib.request.Request(f"{N8N_BASE}/status-set", data=payload,
+                headers={"Content-Type": "application/json"}), timeout=20)
+        return True
+    except Exception:
+        return False
+
 def crontab_lines():
     r = subprocess.run(["crontab", "-l"], capture_output=True, text=True)
     return r.stdout.strip().split("\n") if r.stdout.strip() else []
@@ -201,15 +213,20 @@ class JobAction(BaseModel):
 
 @app.post("/api/job-action")
 def job_action(req: JobAction):
-    statut_map = {"postuler": "a_postuler", "ignorer": "ignoré", "contester": "score"}
-    nouveau_statut = statut_map.get(req.action, req.action)
     docs_launched = []
-    if req.action == "postuler":
+    statut = None
+    if req.action == "postuler":          # bouton "Générer" : lance les 4 docs + statut -> généré
         for doc, url in M3C_WEBHOOKS.items():
             if call_n8n(url, req.job_id) == "déclenché":
                 docs_launched.append(doc)
+        statut = "généré"
+        set_status(req.job_id, statut)
+    elif req.action in ("abandonner", "ignorer"):
+        statut = "abandonné"
+        set_status(req.job_id, statut)
+    # "contester" : pas de changement de statut ici (géré par /api/rescore)
     return {"ok": True, "job_id": req.job_id, "action": req.action,
-            "statut": nouveau_statut, "docs_launched": docs_launched}
+            "statut": statut, "docs_launched": docs_launched}
 
 class RescoreRequest(BaseModel):
     job_id: str

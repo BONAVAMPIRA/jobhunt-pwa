@@ -178,6 +178,14 @@
   .item::before { content: '•'; position: absolute; left: 2px; }
   .item.gap { color: #fca5a5; }
   .item.gap::before { content: '⚠'; left: 0; font-size: 10px; }
+  .gap-exp {
+    color: #93c5fd;
+    font-size: 11px;
+    font-weight: 400;
+    margin-top: 3px;
+    line-height: 1.45;
+    overflow-wrap: anywhere;
+  }
 
   /* Divider */
   .card-divider {
@@ -240,7 +248,7 @@
 <body>
 
 <div class="header">
-  <h1>Scoring <span style="font-size:9px;color:#4b5563;font-weight:400;">build v10</span></h1>
+  <h1>Scoring <span style="font-size:9px;color:#4b5563;font-weight:400;">build v11</span></h1>
   <div class="header-right">
     <span class="count-badge" id="count">—</span>
     <button class="sort-btn active" id="sort-prio" onclick="setSort('prio')">Urgence</button>
@@ -277,6 +285,11 @@ function scoreBarColor(s) {
   if (s >= 75) return '#34d399';
   if (s >= 55) return '#f59e0b';
   return '#9ca3af';
+}
+function gapHTML(g) {
+  const t = (typeof g === 'string') ? g : ((g && (g.gap || g.text)) || '');
+  const exp = (g && typeof g === 'object') ? (g.explication || g.explanation || g.exp || '') : '';
+  return `<div class="item gap">${t}${exp ? `<div class="gap-exp">💡 ${exp}</div>` : ''}</div>`;
 }
 function prioClass(p) {
   const m = { A: 1, B: 2, C: 3, D: 4, P1: 1, P2: 2, P3: 3 };
@@ -337,7 +350,7 @@ function renderCard(job) {
         <div class="section">
           <div class="section-title section-gaps">⚠️ Gaps</div>
           <div class="item-list">
-            ${gaps.map(g => `<div class="item gap">${gapText(g)}</div>`).join('')}
+            ${gaps.map(gapHTML).join('')}
           </div>
         </div>` : ''}
     </div>
@@ -605,7 +618,7 @@ async function loadBriefing() {
     let html = `<div style="background:#16213e;border:1px solid #2d3748;border-radius:12px;padding:14px;margin-bottom:14px;">
       <div style="font-size:11px;font-weight:800;color:#7eb8f7;letter-spacing:.08em;margin-bottom:10px;">⚕ BRIEFING HERMES — ${d.date || ''}</div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">`;
-    const statuts = {score:'📋 À scorer',postulé:'✅ Postulés',abandonné:'❌ Abandonnés',expire:'⏰ Expirés'};
+    const statuts = {score:'📋 À scorer',scored:'📋 Scorées','généré':'⚙️ Générés',a_postuler:'⚙️ Générés',postulé:'✅ Postulés','en attente tahina':'⏳ En attente',abandonné:'❌ Abandonnés',expire:'⏰ Expirés','expiré':'⏰ Expirés'};
     for (const [k,v] of Object.entries(pipe)) {
       const label = statuts[k] || k;
       html += `<div style="background:#1f2937;border-radius:8px;padding:6px 10px;font-size:12px;">

@@ -29,6 +29,16 @@ M3C_WEBHOOKS = {
     "guide":   f"{N8N_BASE}/m3c-guide-v1",
 }
 
+# Statuts qui sortent du deck Scoring : pré-scoring + terminaux/gérés ailleurs (Module 4).
+# Tout le reste (score, scored, "en attente ...", et tout statut non listé) reste visible
+# et triable — pour ne JAMAIS faire disparaître une offre urgente par accident.
+DECK_EXCLUDE = {
+    "", "a_scorer", "a_pretaiter",
+    "genere", "généré", "a_postuler",
+    "postule", "postulé", "abandonne", "abandonné",
+    "ignore", "ignoré", "expire", "expiré",
+}
+
 # ── Helpers ──────────────────────────────────────────────
 
 def read_sheet(sheet_name):
@@ -79,6 +89,15 @@ def set_status(job_id, statut):
     except Exception:
         return False
 
+def regen_briefing():
+    """Régénère le briefing en tâche de fond (non bloquant) pour qu'il reflète
+    immédiatement un changement de pipeline (statut modifié)."""
+    try:
+        subprocess.Popen(["python3", "/home/ubuntu/cockpit/scripts/morning_briefing.py"],
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except Exception:
+        pass
+
 def crontab_lines():
     r = subprocess.run(["crontab", "-l"], capture_output=True, text=True)
     return r.stdout.strip().split("\n") if r.stdout.strip() else []
@@ -103,9 +122,7 @@ def get_jobs():
         jobs = []
         for row in reader:
             statut = (row.get("statut") or "").strip().lower()
-            # Scoring deck = offres à décider seulement. Les "a_postuler"/"généré"/"postulé"
-            # (docs lancés) sortent du deck — elles relèvent du Module 4.
-            if statut not in ("score", "scored"):
+            if statut in DECK_EXCLUDE:
                 continue
             score = 0
             try:
@@ -225,6 +242,8 @@ def job_action(req: JobAction):
         statut = "abandonné"
         set_status(req.job_id, statut)
     # "contester" : pas de changement de statut ici (géré par /api/rescore)
+    if statut:
+        regen_briefing()
     return {"ok": True, "job_id": req.job_id, "action": req.action,
             "statut": statut, "docs_launched": docs_launched}
 

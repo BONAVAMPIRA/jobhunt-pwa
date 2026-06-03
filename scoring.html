@@ -139,10 +139,12 @@
     border-radius: 4px;
     transition: width 0.5s ease;
   }
-  .score-positionnement {
-    font-size: 11px;
-    color: #6b7280;
-    white-space: nowrap;
+  .card-positionnement {
+    font-size: 11.5px;
+    color: #9ca3af;
+    line-height: 1.5;
+    margin: 0 0 10px;
+    overflow-wrap: anywhere;
   }
 
   /* Sections */
@@ -277,11 +279,14 @@ function scoreBarColor(s) {
   return '#9ca3af';
 }
 function prioClass(p) {
-  const n = parseInt(p) || (p === 'P1' ? 1 : p === 'P2' ? 2 : 3);
+  const m = { A: 1, B: 2, C: 3, D: 4, P1: 1, P2: 2, P3: 3 };
+  const n = m[p] || parseInt(p) || 3;
   return `prio-${Math.min(n, 3)}`;
 }
 function prioLabel(p) {
   if (!p) return 'P?';
+  const m = { A: 'P1', B: 'P2', C: 'P3', D: 'P4' };
+  if (m[p]) return m[p];
   return p.startsWith('P') ? p : `P${p}`;
 }
 
@@ -293,7 +298,7 @@ function renderCard(job) {
   const pClass = prioClass(job.priorite);
 
   const forces = (job.forces || []).slice(0, 5);
-  const gaps = (job.gaps || []).slice(0, 4);
+  const gaps = (job.gaps || []).slice(0, 12);
   const gapText = g => (typeof g === 'string') ? g : ((g && (g.gap || g.text)) || '');
   const positionnement = job.positionnement || '';
 
@@ -316,8 +321,9 @@ function renderCard(job) {
         <div class="score-bar-track">
           <div class="score-bar-fill" style="width:${job.score || 0}%;background:${scoreBarColor(job.score)};"></div>
         </div>
-        ${positionnement ? `<div class="score-positionnement">${positionnement}</div>` : ''}
       </div>
+
+      ${positionnement ? `<div class="card-positionnement">${positionnement}</div>` : ''}
 
       ${forces.length ? `
         <div class="section">
@@ -349,7 +355,7 @@ function renderCard(job) {
 function sortJobs(list) {
   return [...list].sort((a, b) => {
     if (sortMode === 'prio') {
-      const pMap = {'P1':1,'P2':2,'P3':3,'1':1,'2':2,'3':3};
+      const pMap = {'A':1,'B':2,'C':3,'D':4,'P1':1,'P2':2,'P3':3,'1':1,'2':2,'3':3};
       const pa = pMap[a.priorite] || 99;
       const pb = pMap[b.priorite] || 99;
       if (pa !== pb) return pa - pb;
@@ -408,6 +414,11 @@ function setSort(mode) {
 
 async function action(jobId, type, evt) {
   const card = evt.target.closest('.card');
+
+  if (type === 'postuler') {
+    if (!confirm('Générer les 4 documents (CV, Lettre, Analyse salariale, Guide) ?\nCela lance des appels IA payants (~0,35 $ par offre).')) return;
+  }
+
   const btns = card.querySelectorAll('button');
   btns.forEach(b => b.disabled = true);
 
@@ -517,6 +528,7 @@ async function submitContest(jobId, evt) {
   const ta = document.getElementById(`contest-${jobId}`);
   const comment = ((ta && ta.value) || '').trim();
   if (!comment) { if (ta) ta.focus(); return; }
+  const oldScore = (jobs.find(j => j.job_id === jobId) || {}).score;
   const actionsDiv = card.querySelector('.card-actions');
   actionsDiv.style.flexDirection = 'row';
   actionsDiv.innerHTML = `<div style="width:100%;padding:8px 0;text-align:center;color:#7eb8f7;font-size:12px;">⏳ Claude révise le score…</div>`;
@@ -528,25 +540,33 @@ async function submitContest(jobId, evt) {
     });
     if (!res.ok) throw new Error('rescore failed');
     const data = await res.json();
-    applyRevision(card, jobId, data);
+    applyRevision(card, jobId, data, oldScore);
   } catch (e) {
     actionsDiv.innerHTML = `<div style="width:100%;padding:8px 0;text-align:center;color:#f87171;font-size:12px;">⚠ Échec de la révision — <button class="sort-btn" onclick="openContest('${jobId}', event)">Réessayer</button></div>`;
   }
 }
 
-function applyRevision(card, jobId, data) {
+function applyRevision(card, jobId, data, oldScore) {
   const job = jobs.find(j => j.job_id === jobId);
   if (!job) return;
-  if (data.score !== undefined && data.score !== '') job.score = parseInt(data.score) || job.score;
+  const newScore = (data.score !== undefined && data.score !== '') ? (parseInt(data.score) || job.score) : job.score;
+  job.score = newScore;
   if (data.positionnement) job.positionnement = data.positionnement;
   if (data.recommandation) job.recommandation = data.recommandation;
   if (data.gaps_json) {
     try { job.gaps = Array.isArray(data.gaps_json) ? data.gaps_json : JSON.parse(data.gaps_json); } catch (_) {}
   }
+  job.revised = true;
   const fresh = renderCard(job);
   card.replaceWith(fresh);
+  const top = fresh.querySelector('.card-top');
+  if (top) {
+    const delta = (oldScore !== undefined && oldScore !== null && oldScore !== '') ? (oldScore + ' → ' + newScore) : ('→ ' + newScore);
+    top.insertAdjacentHTML('afterbegin',
+      `<div style="background:#064e3b;color:#34d399;font-size:11px;font-weight:600;padding:5px 8px;border-radius:6px;margin-bottom:8px;">↻ Score révisé : ${delta} ✓ (contesté une fois)</div>`);
+  }
   fresh.style.boxShadow = '0 0 0 2px #34d399';
-  setTimeout(() => { fresh.style.boxShadow = ''; }, 1500);
+  setTimeout(() => { fresh.style.boxShadow = ''; }, 2500);
 }
 
 async function loadJobs() {

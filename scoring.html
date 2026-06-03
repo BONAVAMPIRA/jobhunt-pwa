@@ -54,6 +54,8 @@
     flex-direction: column;
     gap: 14px;
   }
+  /* Empeche le flexbox d'ecraser les cartes quand la liste depasse la hauteur (sinon height ~2px) */
+  #deck > * { flex-shrink: 0; }
 
   /* CARD */
   .card {

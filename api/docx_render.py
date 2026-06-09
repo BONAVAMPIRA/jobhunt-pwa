@@ -152,7 +152,7 @@ def render_cv(md_text, out_path):
         p = doc.add_paragraph()
         _add_inline(p, s, 10)
 
-    doc.save(str(out_path))
+    doc.save(out_path)  # accepte un chemin (str/Path) OU un file-like (BytesIO)
 
 
 def render_simple(md_text, out_path, font_size=11, margin_cm=2.0):
@@ -174,7 +174,7 @@ def render_simple(md_text, out_path, font_size=11, margin_cm=2.0):
             p = doc.add_paragraph(); _add_inline(p, s, font_size)
         else:
             doc.add_paragraph()
-    doc.save(str(out_path))
+    doc.save(out_path)  # accepte un chemin (str/Path) OU un file-like (BytesIO)
 
 
 def render(md_text, out_path, kind):

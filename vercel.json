@@ -12,7 +12,11 @@
     { "source": "/api/generate-docs",  "destination": "/api/jobs.js" },
     { "source": "/api/crons",          "destination": "/api/jobs.js" },
     { "source": "/api/crons/:path*",   "destination": "/api/jobs.js" },
-    { "source": "/api/services",       "destination": "/api/jobs.js" }
+    { "source": "/api/services",       "destination": "/api/jobs.js" },
+    { "source": "/api/postuler-jobs",  "destination": "/api/jobs.js" },
+    { "source": "/api/doc",            "destination": "/api/jobs.js" },
+    { "source": "/api/perso",          "destination": "/api/jobs.js" },
+    { "source": "/api/mark-postule",   "destination": "/api/jobs.js" }
   ]
 }
 

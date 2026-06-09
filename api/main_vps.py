@@ -1,7 +1,12 @@
-import subprocess, os, json, csv, io, re, hmac
+import subprocess, os, json, csv, io, re, hmac, unicodedata
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
+
+try:
+    import docx_render  # rendu md->docx format TI Quebec (meme dossier que main.py)
+except Exception:
+    docx_render = None
 from pydantic import BaseModel
 from pathlib import Path
 from datetime import datetime, timezone
@@ -474,6 +479,115 @@ def add_journal(req: JournalEntry):
     with open(str(JOURNAL_PATH), "a") as f:
         f.write(entry)
     return {"ok": True}
+
+# ── Module 4 : Postulation ──────────────────────────────
+# Dossier canonique unique par candidature : candidatures/<slug_co>/<slug_role>/
+# contenant les .md (source, generes par M3c) + les .docx (a la demande, ce module).
+
+PROFILE_JSON = OUTPUT_DIR / "profile.json"
+DOC_PREFIX = {"cv": "CV", "lm": "LM", "salaire": "Salaire", "guide": "Guide"}
+GENERE_STATUTS = {"genere", "généré"}
+
+def slugify(s):
+    s = unicodedata.normalize("NFKD", str(s)).encode("ascii", "ignore").decode("ascii")
+    return re.sub(r"[^a-zA-Z0-9]+", "_", s).strip("_").lower()
+
+def candidature_dir(entreprise, poste):
+    return CANDIDATURES / slugify(entreprise) / slugify(poste)
+
+def doc_md_path(entreprise, poste, doc_type):
+    base = f"{slugify(entreprise)}_{slugify(poste)}"
+    return candidature_dir(entreprise, poste) / f"{DOC_PREFIX[doc_type]}_{base}.md"
+
+def row_for_job(job_id):
+    raw = read_sheet("SCORED_JOBS")
+    for row in csv.DictReader(io.StringIO(raw)):
+        if (row.get("job_id") or "").strip() == job_id:
+            return row
+    return None
+
+@app.get("/api/postuler-jobs")
+def postuler_jobs():
+    """Offres au statut 'genere' : docs prets, en attente de postulation."""
+    try:
+        raw = read_sheet("SCORED_JOBS")
+        out = []
+        for row in csv.DictReader(io.StringIO(raw)):
+            if (row.get("statut") or "").strip().lower() not in GENERE_STATUTS:
+                continue
+            entreprise = (row.get("entreprise") or "").strip()
+            poste = (row.get("poste") or "").strip()
+            docs = {t: doc_md_path(entreprise, poste, t).exists() for t in DOC_PREFIX}
+            score = 0
+            try:
+                score = int(float(row.get("score") or 0))
+            except Exception:
+                pass
+            out.append({
+                "job_id": (row.get("job_id") or "").strip(),
+                "poste": poste, "entreprise": entreprise,
+                "url": (row.get("url") or "").strip(),
+                "score": score,
+                "deadline": (row.get("deadline") or "").strip(),
+                "docs": docs,
+                "docs_ready": all(docs.values()),
+            })
+        out.sort(key=lambda j: -j["score"])
+        return {"jobs": out, "total": len(out)}
+    except Exception as e:
+        return {"jobs": [], "total": 0, "error": str(e)}
+
+@app.get("/api/doc")
+def get_doc(job_id: str, type: str, format: str = "md"):
+    """Sert un document de candidature. format=md -> texte ; format=docx -> fichier (genere a la demande)."""
+    type = (type or "").lower()
+    if type not in DOC_PREFIX:
+        raise HTTPException(status_code=400, detail="type invalide (cv|lm|salaire|guide)")
+    row = row_for_job(job_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="job_id introuvable")
+    entreprise = (row.get("entreprise") or "").strip()
+    poste = (row.get("poste") or "").strip()
+    md_path = doc_md_path(entreprise, poste, type)
+    if not md_path.exists():
+        raise HTTPException(status_code=404, detail=f"document {type} introuvable pour cette offre")
+
+    if format == "md":
+        return JSONResponse({"job_id": job_id, "type": type,
+                             "content": md_path.read_text(encoding="utf-8")})
+    if format == "docx":
+        if docx_render is None:
+            raise HTTPException(status_code=503, detail="generateur docx indisponible (python-docx manquant)")
+        buf = io.BytesIO()                       # rendu en memoire -> pas d'ecriture disque (perm. opc/ubuntu)
+        docx_render.render(md_path.read_text(encoding="utf-8"), buf, type)
+        buf.seek(0)
+        fname = f"{DOC_PREFIX[type]}_Jaona_Rabaonarison_{slugify(entreprise)}_{slugify(poste)}.docx"
+        return StreamingResponse(
+            buf,
+            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+        )
+    raise HTTPException(status_code=400, detail="format invalide (md|docx)")
+
+@app.get("/api/perso")
+def get_perso():
+    """Infos perso depuis le profil (export du Vault Obsidian)."""
+    try:
+        data = json.loads(PROFILE_JSON.read_text(encoding="utf-8"))
+        return data.get("identite", {})
+    except Exception as e:
+        return {"error": str(e)}
+
+class MarkPostule(BaseModel):
+    job_id: str
+    canal: str = ""
+
+@app.post("/api/mark-postule")
+def mark_postule(req: MarkPostule):
+    ok = set_status(req.job_id, "postulé")
+    if ok:
+        regen_briefing()
+    return {"ok": ok, "job_id": req.job_id, "statut": "postulé" if ok else None}
 
 # ── Hermes chat ──
 

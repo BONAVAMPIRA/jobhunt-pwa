@@ -23,11 +23,10 @@ export default async function handler(req) {
       headers,
       body: req.method === 'POST' ? await req.text() : undefined,
     });
-    const data = await upstream.text();
-    return new Response(data, {
-      status: upstream.status,
-      headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
-    });
+    // Stream du corps tel quel : préserve le binaire (.docx) ET le JSON.
+    const outHeaders = new Headers(upstream.headers);
+    outHeaders.set('Access-Control-Allow-Origin', '*');
+    return new Response(upstream.body, { status: upstream.status, headers: outHeaders });
   } catch (err) {
     return new Response(JSON.stringify({ error: err.message }), {
       status: 502, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }

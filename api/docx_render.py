@@ -83,7 +83,8 @@ def _footer(section, left_text="Références fournies sur demande"):
 def _new_doc(margin_cm=1.9):
     doc = Document()
     s = doc.sections[0]
-    s.page_width, s.page_height = 12240, 15840  # US Letter (twips)
+    s.page_width = Inches(8.5)    # US Letter — python-docx attend des EMU (Inches), PAS des twips
+    s.page_height = Inches(11)
     m = Inches(round(margin_cm / 2.54, 3))
     s.left_margin = s.right_margin = s.top_margin = s.bottom_margin = m
     return doc, s

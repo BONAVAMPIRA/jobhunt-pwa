@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cockpit — Postuler</title>
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#7eb8f7">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background:#1a1a2e; color:#e0e0e0; font-family:system-ui,sans-serif; font-size:14px;
+         height:100dvh; display:flex; flex-direction:column; }
+  .header { padding:10px 16px; border-bottom:1px solid #2d3748; display:flex; align-items:center;
+            justify-content:space-between; flex-shrink:0; }
+  .header h1 { font-size:15px; color:#7eb8f7; }
+  .count-badge { background:#2563eb; color:#fff; font-size:11px; font-weight:700; padding:2px 8px; border-radius:12px; }
+
+  /* Selecteur d'offres (chips) */
+  .jobbar { display:flex; gap:8px; padding:10px 14px; overflow-x:auto; border-bottom:1px solid #2d3748; flex-shrink:0; }
+  .chip { background:#16213e; border:1px solid #2d3748; border-radius:10px; padding:6px 10px; font-size:12px;
+          color:#d1d5db; cursor:pointer; white-space:nowrap; flex-shrink:0; line-height:1.3; }
+  .chip.active { border-color:#7eb8f7; color:#7eb8f7; }
+  .chip b { display:block; font-size:11px; color:#7eb8f7; }
+  .chip.active b { color:#bfdbfe; }
+  .chip .sc { font-size:10px; color:#6b7280; }
+
+  /* Split */
+  .split { flex:1; display:flex; min-height:0; }
+  .pane-offer { flex:1.15; border-right:1px solid #2d3748; display:flex; flex-direction:column; min-width:0; }
+  .offer-toolbar { padding:8px 12px; display:flex; gap:8px; align-items:center; border-bottom:1px solid #2d3748; flex-shrink:0; }
+  .offer-toolbar a { color:#7eb8f7; font-size:12px; text-decoration:none; border:1px solid #2d3748; padding:5px 10px; border-radius:8px; }
+  .offer-note { font-size:10px; color:#6b7280; }
+  iframe { flex:1; width:100%; border:0; background:#fff; }
+
+  .pane-asst { flex:1; overflow-y:auto; padding:14px; }
+  .pane-asst > * { flex-shrink:0; }
+
+  .block { background:#16213e; border:1px solid #2d3748; border-radius:12px; padding:14px; margin-bottom:14px; }
+  .block h2 { font-size:11px; font-weight:800; color:#7eb8f7; letter-spacing:.08em; margin-bottom:10px; }
+  .job-title { font-size:15px; font-weight:700; margin-bottom:2px; }
+  .job-co { font-size:12px; color:#7eb8f7; margin-bottom:8px; }
+  .job-meta { font-size:11px; color:#9ca3af; display:flex; gap:10px; flex-wrap:wrap; }
+
+  /* Perso */
+  .perso-row { display:flex; align-items:center; gap:8px; padding:5px 0; border-bottom:1px solid #21304d; }
+  .perso-row:last-child { border-bottom:0; }
+  .perso-k { font-size:10px; color:#6b7280; width:78px; flex-shrink:0; }
+  .perso-v { font-size:12px; color:#e0e0e0; flex:1; overflow-wrap:anywhere; }
+  .copy { background:#1f2937; border:1px solid #2d3748; color:#9ca3af; font-size:10px; padding:3px 7px;
+          border-radius:6px; cursor:pointer; flex-shrink:0; }
+  .copy:active { opacity:.6; }
+
+  /* Docs */
+  .doc-row { display:flex; align-items:center; gap:8px; padding:7px 0; border-bottom:1px solid #21304d; }
+  .doc-row:last-child { border-bottom:0; }
+  .doc-name { flex:1; font-size:13px; }
+  .doc-name .fmt { font-size:10px; color:#6b7280; display:block; }
+  .doc-miss { color:#6b7280; font-size:11px; }
+  .btn { border:none; border-radius:8px; font-size:11px; font-weight:600; padding:6px 10px; cursor:pointer; }
+  .btn:active { opacity:.7; }
+  .btn-prev { background:#2d3748; color:#e0e0e0; }
+  .btn-dl   { background:#1d4ed8; color:#fff; }
+  .btn-postule { background:#059669; color:#fff; width:100%; padding:11px; font-size:14px; border-radius:10px; }
+
+  .info-card { background:#16213e; border:1px dashed #2d3748; border-radius:12px; padding:22px; text-align:center;
+               color:#6b7280; font-size:13px; line-height:1.6; }
+  .info-card .icon { font-size:36px; display:block; margin-bottom:8px; }
+
+  /* Apercu modal */
+  .modal { position:fixed; inset:0; background:rgba(0,0,0,.6); display:none; align-items:center; justify-content:center; padding:20px; z-index:50; }
+  .modal.open { display:flex; }
+  .modal-box { background:#0f1729; border:1px solid #2d3748; border-radius:12px; max-width:760px; width:100%;
+               max-height:86vh; display:flex; flex-direction:column; }
+  .modal-head { padding:10px 14px; border-bottom:1px solid #2d3748; display:flex; justify-content:space-between; align-items:center; }
+  .modal-head b { color:#7eb8f7; font-size:13px; }
+  .modal-head button { background:none; border:0; color:#9ca3af; font-size:20px; cursor:pointer; }
+  .modal-body { overflow-y:auto; padding:16px 18px; }
+  .md h1 { font-size:18px; margin:0 0 4px; }
+  .md h2 { font-size:13px; color:#7eb8f7; text-transform:uppercase; letter-spacing:.05em; margin:14px 0 4px; border-bottom:1px solid #2d3748; padding-bottom:3px; }
+  .md h3 { font-size:13px; margin:8px 0 2px; }
+  .md p, .md li { font-size:12.5px; line-height:1.5; color:#d1d5db; }
+  .md li { margin-left:16px; }
+  .md strong { color:#fff; }
+
+  .nav { display:flex; border-top:1px solid #2d3748; flex-shrink:0; background:#16213e; }
+  .nav a { flex:1; display:flex; flex-direction:column; align-items:center; padding:8px 4px;
+           text-decoration:none; font-size:10px; color:#6b7280; gap:3px; }
+  .nav a.active { color:#7eb8f7; }
+  .nav a span { font-size:20px; }
+
+  @media (max-width: 880px) {
+    .split { flex-direction:column; }
+    .pane-offer { flex:none; height:38vh; border-right:0; border-bottom:1px solid #2d3748; }
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>Postuler <span style="font-size:9px;color:#4b5563;font-weight:400;">M4 v1</span></h1>
+  <span class="count-badge" id="count">—</span>
+</div>
+
+<div class="jobbar" id="jobbar"></div>
+
+<div class="split">
+  <div class="pane-offer">
+    <div class="offer-toolbar">
+      <a id="openOffer" href="#" target="_blank" rel="noopener">↗ Ouvrir l'offre</a>
+      <span class="offer-note">Si le cadre reste blanc, le site bloque l'aperçu — utilise « Ouvrir l'offre ».</span>
+    </div>
+    <iframe id="offerFrame" referrerpolicy="no-referrer" sandbox="allow-same-origin allow-scripts allow-popups allow-forms"></iframe>
+  </div>
+  <div class="pane-asst" id="asst">
+    <div class="info-card"><span class="icon">⏳</span>Chargement des offres prêtes…</div>
+  </div>
+</div>
+
+<nav class="nav">
+  <a href="/chat.html"><span>💬</span>Chat</a>
+  <a href="/scoring.html"><span>📋</span>Scoring</a>
+  <a href="/postuler.html" class="active"><span>📮</span>Postuler</a>
+  <a href="/systeme.html"><span>⚙️</span>Système</a>
+</nav>
+
+<div class="modal" id="modal" onclick="if(event.target===this)closeModal()">
+  <div class="modal-box">
+    <div class="modal-head"><b id="modalTitle">Aperçu</b><button onclick="closeModal()">✕</button></div>
+    <div class="modal-body md" id="modalBody"></div>
+  </div>
+</div>
+
+<script>
+const DOCS = [
+  { type:'cv',      label:'CV',                fmt:'format TI Québec' },
+  { type:'lm',      label:'Lettre de motivation', fmt:'format lettre' },
+  { type:'salaire', label:'Analyse salariale', fmt:'référence' },
+  { type:'guide',   label:'Guide d\'entretien', fmt:'référence' },
+];
+let jobs = [], perso = null, currentId = null;
+
+async function api(path) {
+  const res = await fetch(path, { cache:'no-store' });
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  return res.json();
+}
+
+function esc(s){ return (s||'').replace(/[&<>]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+
+// Mini-rendu Markdown pour l'aperçu (gras, titres, puces).
+function mdToHtml(md) {
+  const out = [];
+  let inUl = false;
+  for (let line of md.split('\n')) {
+    let s = line.trim();
+    const closeUl = () => { if (inUl) { out.push('</ul>'); inUl = false; } };
+    if (!s) { closeUl(); continue; }
+    if (s.startsWith('---')) { closeUl(); out.push('<hr style="border:0;border-top:1px solid #2d3748;margin:8px 0">'); continue; }
+    let h = esc(s).replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>').replace(/\*([^*]+)\*/g,'<em>$1</em>');
+    if (s.startsWith('# '))      { closeUl(); out.push('<h1>'+h.slice(2)+'</h1>'); }
+    else if (s.startsWith('## ')) { closeUl(); out.push('<h2>'+h.slice(3)+'</h2>'); }
+    else if (s.startsWith('### ')){ closeUl(); out.push('<h3>'+h.slice(4)+'</h3>'); }
+    else if (s.startsWith('- ') || s.startsWith('* ')) { if(!inUl){out.push('<ul>');inUl=true;} out.push('<li>'+h.slice(2)+'</li>'); }
+    else { closeUl(); out.push('<p>'+h+'</p>'); }
+  }
+  if (inUl) out.push('</ul>');
+  return out.join('');
+}
+
+function renderChips() {
+  const bar = document.getElementById('jobbar');
+  bar.innerHTML = '';
+  jobs.forEach(j => {
+    const c = document.createElement('div');
+    c.className = 'chip' + (j.job_id === currentId ? ' active' : '');
+    c.onclick = () => selectJob(j.job_id);
+    c.innerHTML = `<b>${esc(j.entreprise)}</b>${esc(j.poste)}<span class="sc"> · ${j.score}/100</span>`;
+    bar.appendChild(c);
+  });
+  document.getElementById('count').textContent = jobs.length;
+}
+
+function personaBlock() {
+  if (!perso || perso.error) return '';
+  const langs = (perso.langues||[]).map(l=>`${l.langue} (${l.niveau})`).join(', ');
+  const rows = [
+    ['Nom', perso.nom], ['Lieu', perso.localisation], ['Tél', perso.telephone],
+    ['Courriel', perso.email], ['LinkedIn', perso.linkedin], ['Langues', langs],
+    ['Atouts', (perso.atouts||[]).join(' · ')],
+  ].filter(r => r[1]);
+  return `<div class="block"><h2>👤 Infos perso (Vault)</h2>${rows.map(([k,v])=>`
+    <div class="perso-row"><span class="perso-k">${k}</span><span class="perso-v">${esc(v)}</span>
+    <button class="copy" onclick="copyText(${JSON.stringify(v)})">copier</button></div>`).join('')}</div>`;
+}
+
+function selectJob(id) {
+  currentId = id;
+  const j = jobs.find(x => x.job_id === id);
+  if (!j) return;
+  document.getElementById('openOffer').href = j.url || '#';
+  document.getElementById('offerFrame').src = j.url || 'about:blank';
+  renderChips();
+
+  const docRows = DOCS.map(d => {
+    const ok = j.docs && j.docs[d.type];
+    if (!ok) return `<div class="doc-row"><div class="doc-name">${d.label}<span class="fmt">${d.fmt}</span></div><span class="doc-miss">absent</span></div>`;
+    return `<div class="doc-row">
+      <div class="doc-name">${d.label}<span class="fmt">${d.fmt}</span></div>
+      <button class="btn btn-prev" onclick="preview('${id}','${d.type}','${esc(d.label)}')">Aperçu</button>
+      <button class="btn btn-dl" onclick="download('${id}','${d.type}',this)">.docx</button>
+    </div>`;
+  }).join('');
+
+  document.getElementById('asst').innerHTML = `
+    <div class="block">
+      <div class="job-title">${esc(j.poste)}</div>
+      <div class="job-co">${esc(j.entreprise)}</div>
+      <div class="job-meta"><span>Score ${j.score}/100</span>${j.deadline?`<span>📅 ${esc(j.deadline)}</span>`:''}</div>
+    </div>
+    ${personaBlock()}
+    <div class="block"><h2>📄 Documents</h2>${docRows}</div>
+    <div class="block"><h2>✅ Statut</h2>
+      <button class="btn-postule" onclick="markPostule('${id}')">📮 Marquer comme postulé</button>
+    </div>`;
+}
+
+async function preview(id, type, label) {
+  const body = document.getElementById('modalBody');
+  document.getElementById('modalTitle').textContent = label;
+  body.innerHTML = '<p>⏳ Chargement…</p>';
+  document.getElementById('modal').classList.add('open');
+  try {
+    const d = await api(`/api/doc?job_id=${encodeURIComponent(id)}&type=${type}&format=md`);
+    body.innerHTML = mdToHtml(d.content || '');
+  } catch (e) { body.innerHTML = '<p>⚠ Erreur : ' + e.message + '</p>'; }
+}
+function closeModal(){ document.getElementById('modal').classList.remove('open'); }
+
+async function download(id, type, btn) {
+  const old = btn.textContent; btn.textContent = '…'; btn.disabled = true;
+  try {
+    const res = await fetch(`/api/doc?job_id=${encodeURIComponent(id)}&type=${type}&format=docx`, { cache:'no-store' });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const blob = await res.blob();
+    const cd = res.headers.get('Content-Disposition') || '';
+    const m = cd.match(/filename="?([^"]+)"?/);
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = m ? m[1] : `${type}.docx`;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  } catch (e) { alert('Téléchargement échoué : ' + e.message); }
+  btn.textContent = old; btn.disabled = false;
+}
+
+async function markPostule(id) {
+  if (!confirm('Marquer cette offre comme POSTULÉE ?\nElle sortira de la liste des candidatures à envoyer.')) return;
+  try {
+    await fetch('/api/mark-postule', { method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ job_id:id }) });
+    jobs = jobs.filter(j => j.job_id !== id);
+    renderChips();
+    if (jobs.length) selectJob(jobs[0].job_id);
+    else document.getElementById('asst').innerHTML = '<div class="info-card"><span class="icon">🎉</span><strong>Tout est postulé !</strong><br>Aucune candidature en attente.</div>';
+  } catch (e) { alert('Erreur : ' + e.message); }
+}
+
+function copyText(t){ navigator.clipboard && navigator.clipboard.writeText(t); }
+
+async function init() {
+  try {
+    [perso] = await Promise.all([api('/api/perso').catch(()=>null)]);
+    const data = await api('/api/postuler-jobs');
+    jobs = (data.jobs || []);
+    if (!jobs.length) {
+      document.getElementById('asst').innerHTML = '<div class="info-card"><span class="icon">📭</span><strong>Aucune offre prête</strong><br>Génère d\'abord les documents depuis l\'onglet Scoring.</div>';
+      document.getElementById('count').textContent = '0';
+      return;
+    }
+    renderChips();
+    selectJob(jobs[0].job_id);
+  } catch (e) {
+    document.getElementById('asst').innerHTML = '<div class="info-card"><span class="icon">⚠️</span><strong>Erreur de chargement</strong><br>' + e.message + '</div>';
+  }
+}
+init();
+
+if ('serviceWorker' in navigator) {
+  let r=false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => { if(r)return; r=true; location.reload(); });
+  navigator.serviceWorker.register('/sw.js').then(x => x.update && x.update()).catch(()=>{});
+}
+</script>
+</body>
+</html>

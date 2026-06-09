@@ -4,6 +4,7 @@
     { "source": "/chat",               "destination": "/chat.html" },
     { "source": "/scoring",            "destination": "/scoring.html" },
     { "source": "/systeme",            "destination": "/systeme.html" },
+    { "source": "/postuler",           "destination": "/postuler.html" },
     { "source": "/api/jobs",           "destination": "/api/jobs.js" },
     { "source": "/api/briefing",       "destination": "/api/jobs.js" },
     { "source": "/api/docs-status",    "destination": "/api/jobs.js" },

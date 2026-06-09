@@ -92,7 +92,8 @@ async function getProjectStatus() {
   const COCKPIT_URL = process.env.COCKPIT_API_URL;
   if (!COCKPIT_URL) return '';
   try {
-    const res = await fetch(`${COCKPIT_URL}/api/status`, { signal: AbortSignal.timeout(5000) });
+    const authHeaders = process.env.COCKPIT_API_TOKEN ? { Authorization: `Bearer ${process.env.COCKPIT_API_TOKEN}` } : {};
+    const res = await fetch(`${COCKPIT_URL}/api/status`, { headers: authHeaders, signal: AbortSignal.timeout(5000) });
     const d = await res.json();
     const sheets = d.sheets || {};
     const services = d.services || {};
@@ -194,9 +195,11 @@ async function handleHermes(message, sessionId) {
     }), { headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } });
   }
   try {
+    const chatHeaders = { 'Content-Type': 'application/json' };
+    if (process.env.COCKPIT_API_TOKEN) chatHeaders['Authorization'] = `Bearer ${process.env.COCKPIT_API_TOKEN}`;
     const res = await fetch(`${COCKPIT_URL}/api/chat`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: chatHeaders,
       body: JSON.stringify({ message, session_id: sessionId }),
     });
     const data = await res.json();

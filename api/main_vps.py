@@ -1,13 +1,43 @@
-import subprocess, os, json, csv, io, re
-from fastapi import FastAPI, HTTPException
+import subprocess, os, json, csv, io, re, hmac
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from pathlib import Path
 from datetime import datetime, timezone
 import urllib.request
 
 app = FastAPI(title="Cockpit API")
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+
+# ── Auth (Fix 2 — sprint securite P0, 2026-06-08) ─────────
+# L'API est exposee publiquement (Tailscale Funnel). Tout endpoint sauf /health
+# exige un Bearer token. Le token est injecte cote serveur par les proxies Vercel
+# (jobs.js / chat.js) -> jamais expose au navigateur.
+# Fail-closed : si COCKPIT_API_TOKEN n'est pas configure, on refuse tout (503).
+API_TOKEN = os.environ.get("COCKPIT_API_TOKEN", "")
+PUBLIC_PATHS = {"/health"}
+
+@app.middleware("http")
+async def require_bearer(request: Request, call_next):
+    if request.method == "OPTIONS" or request.url.path in PUBLIC_PATHS:
+        return await call_next(request)
+    if not API_TOKEN:
+        return JSONResponse({"detail": "API token not configured"}, status_code=503)
+    auth = request.headers.get("authorization", "")
+    if not hmac.compare_digest(auth, f"Bearer {API_TOKEN}"):
+        return JSONResponse({"detail": "Unauthorized"}, status_code=401)
+    return await call_next(request)
+
+# CORS restreint (Fix 3 — sprint securite P0). Defaut = domaine Vercel de prod ;
+# surchargeable par env CORS_ALLOWED_ORIGINS (liste separee par des virgules) pour le SaaS.
+CORS_ORIGINS = [o.strip() for o in os.environ.get(
+    "CORS_ALLOWED_ORIGINS", "https://1-pwa.vercel.app").split(",") if o.strip()]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=CORS_ORIGINS,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization"],
+)
 
 HERMES_BIN      = os.path.expanduser("~/.local/bin/hermes")
 HERMES_ENV      = {**os.environ, "PATH": f"{os.path.expanduser('~/.local/bin')}:/usr/bin:/bin"}

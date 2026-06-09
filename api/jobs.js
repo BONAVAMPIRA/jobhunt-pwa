@@ -13,10 +13,14 @@ export default async function handler(req) {
   const path = url.pathname; // /api/jobs ou /api/docs-status
   const search = url.search;
 
+  // Token injecté côté serveur — jamais exposé au navigateur (Fix 2 sécurité P0).
+  const headers = { 'Content-Type': 'application/json' };
+  if (process.env.COCKPIT_API_TOKEN) headers['Authorization'] = `Bearer ${process.env.COCKPIT_API_TOKEN}`;
+
   try {
     const upstream = await fetch(`${COCKPIT_URL}${path}${search}`, {
       method: req.method,
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: req.method === 'POST' ? await req.text() : undefined,
     });
     const data = await upstream.text();

@@ -529,6 +529,7 @@ def postuler_jobs():
                 "url": (row.get("url") or "").strip(),
                 "score": score,
                 "deadline": (row.get("deadline") or "").strip(),
+                "date_collecte": (row.get("date_publication") or row.get("date") or "").strip(),
                 "docs": docs,
                 "docs_ready": all(docs.values()),
             })

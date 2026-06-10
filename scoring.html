@@ -65,6 +65,7 @@
     overflow: hidden;
     transition: opacity 0.3s;
   }
+  .card.expired { opacity: .55; border-left: 3px solid #f87171; }
   .card-top {
     padding: 14px 14px 10px;
   }
@@ -272,9 +273,21 @@ let loadError = null;
 
 function daysLeft(deadline) {
   if (!deadline) return null;
-  const d = new Date(deadline);
+  const d = new Date(String(deadline).replace(/\//g, '-'));
   if (isNaN(d)) return null;
   return Math.ceil((d - Date.now()) / 86400000);
+}
+// Beaucoup d'offres n'affichent pas de deadline → on l'ESTIME depuis la date de
+// publication + durée de vie typique d'une annonce (~30j). Renvoie {daysLeft, estimated}.
+const LIFESPAN_DAYS = 30;
+function freshness(job) {
+  const dl = daysLeft(job.deadline);
+  if (dl !== null) return { daysLeft: dl, estimated: false };
+  const pd = job.date_collecte ? new Date(String(job.date_collecte).replace(/\//g, '-')) : null;
+  if (pd && !isNaN(pd)) {
+    return { daysLeft: Math.ceil((pd.getTime() + LIFESPAN_DAYS * 86400000 - Date.now()) / 86400000), estimated: true };
+  }
+  return { daysLeft: null, estimated: false };
 }
 
 function scoreColor(s) {
@@ -305,9 +318,12 @@ function prioLabel(p) {
 }
 
 function renderCard(job) {
-  const days = daysLeft(job.deadline);
+  const f = freshness(job);
+  const days = f.daysLeft;
+  const est = f.estimated ? '~' : '';
   const deadlineUrgent = days !== null && days <= 7;
-  const deadlineText = days === null ? '' : days <= 0 ? 'Expirée' : `${days}j restants`;
+  const expired = days !== null && days < 0;
+  const deadlineText = days === null ? '' : days < 0 ? `Expirée${f.estimated ? ' (est.)' : ''}` : `${est}${days}j restants`;
   const pLabel = prioLabel(job.priorite);
   const pClass = prioClass(job.priorite);
 
@@ -317,7 +333,7 @@ function renderCard(job) {
   const positionnement = job.positionnement || '';
 
   const card = document.createElement('div');
-  card.className = 'card';
+  card.className = 'card' + (expired ? ' expired' : '');
   card.dataset.jobId = job.job_id;
 
   card.innerHTML = `
@@ -367,14 +383,18 @@ function renderCard(job) {
 }
 
 function sortJobs(list) {
+  const isExp = j => { const d = freshness(j).daysLeft; return d !== null && d < 0; };
   return [...list].sort((a, b) => {
+    // Expirées (réelles ou estimées) toujours en bas, quel que soit le tri.
+    const ea = isExp(a) ? 1 : 0, eb = isExp(b) ? 1 : 0;
+    if (ea !== eb) return ea - eb;
     if (sortMode === 'prio') {
       const pMap = {'A':1,'B':2,'C':3,'D':4,'P1':1,'P2':2,'P3':3,'1':1,'2':2,'3':3};
       const pa = pMap[a.priorite] || 99;
       const pb = pMap[b.priorite] || 99;
       if (pa !== pb) return pa - pb;
-      const da = daysLeft(a.deadline) ?? 999;
-      const db = daysLeft(b.deadline) ?? 999;
+      const da = freshness(a).daysLeft ?? 999;
+      const db = freshness(b).daysLeft ?? 999;
       if (da !== db) return da - db;
       return (b.score || 0) - (a.score || 0);
     }

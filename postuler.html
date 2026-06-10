@@ -22,6 +22,7 @@
   .chip.active { border-color:#7eb8f7; color:#7eb8f7; }
   .chip b { display:block; font-size:11px; color:#7eb8f7; }
   .chip.active b { color:#bfdbfe; }
+  .chip.expired { opacity:.5; }
   .chip .sc { font-size:10px; color:#6b7280; }
 
   /* Split */
@@ -172,9 +173,13 @@ function renderChips() {
   bar.innerHTML = '';
   jobs.forEach(j => {
     const c = document.createElement('div');
-    c.className = 'chip' + (j.job_id === currentId ? ' active' : '');
+    const f = freshness(j), exp = f.daysLeft !== null && f.daysLeft < 0, dl = f.daysLeft;
+    const est = f.estimated ? '~' : '';
+    c.className = 'chip' + (j.job_id === currentId ? ' active' : '') + (exp ? ' expired' : '');
     c.onclick = () => selectJob(j.job_id);
-    c.innerHTML = `<b>${esc(j.entreprise)}</b>${esc(j.poste)}<span class="sc"> · ${j.score}/100</span>`;
+    const tag = exp ? `<span class="sc" style="color:#f87171"> · ⛔ expirée${est?' (est.)':''}</span>`
+              : (dl !== null && dl <= 7) ? `<span class="sc" style="color:#fbbf24"> · ⏳ ${est}${dl}j</span>` : '';
+    c.innerHTML = `<b>${esc(j.entreprise)}</b>${esc(j.poste)}<span class="sc"> · ${j.score}/100</span>${tag}`;
     bar.appendChild(c);
   });
   document.getElementById('count').textContent = jobs.length;
@@ -215,7 +220,8 @@ function selectJob(id) {
     <div class="block">
       <div class="job-title">${esc(j.poste)}</div>
       <div class="job-co">${esc(j.entreprise)}</div>
-      <div class="job-meta"><span>Score ${j.score}/100</span>${j.deadline?`<span>📅 ${esc(j.deadline)}</span>`:''}</div>
+      <div class="job-meta"><span>Score ${j.score}/100</span>${j.deadline?`<span>📅 ${esc(j.deadline)}</span>`:''}${(()=>{const f=freshness(j),dl=f.daysLeft,e=f.estimated?'~':'';if(dl===null)return '';return dl<0?`<span style="color:#f87171">⛔ expirée depuis ${e}${-dl}j</span>`:dl<=7?`<span style="color:#fbbf24">⏳ ${e}${dl}j restants</span>`:'';})()}</div>
+      ${isExpired(j)?`<div style="background:#2d1b1b;color:#f87171;font-size:12px;padding:7px 9px;border-radius:6px;margin-top:8px">⛔ Offre probablement expirée${freshness(j).estimated?' (estimé d\'après l\'âge de l\'annonce, ~'+LIFESPAN_DAYS+'j)':''}. Vérifie qu'elle accepte encore les candidatures avant d'y passer du temps.</div>`:''}
     </div>
     ${personaBlock()}
     <div class="block"><h2>📄 Documents</h2>${docRows}</div>
@@ -267,11 +273,43 @@ async function markPostule(id) {
 
 function copyText(t){ navigator.clipboard && navigator.clipboard.writeText(t); }
 
+// ── Fraîcheur ──
+// Beaucoup d'offres n'ont pas de deadline affichée → on l'ESTIME : date de
+// publication + durée de vie typique d'une annonce. Sinon, deadline explicite.
+const LIFESPAN_DAYS = 30;
+function parseDate(s) {
+  if (!s) return null;
+  const d = new Date(String(s).replace(/\//g, '-'));
+  return isNaN(d) ? null : d;
+}
+function freshness(j) {
+  const dd = parseDate(j.deadline);
+  if (dd) return { daysLeft: Math.ceil((dd - Date.now()) / 86400000), estimated: false };
+  const pd = parseDate(j.date_collecte);
+  if (pd) {
+    const est = pd.getTime() + LIFESPAN_DAYS * 86400000;
+    return { daysLeft: Math.ceil((est - Date.now()) / 86400000), estimated: true };
+  }
+  return { daysLeft: null, estimated: false };
+}
+function isExpired(j) { const f = freshness(j); return f.daysLeft !== null && f.daysLeft < 0; }
+// Tri : vivantes d'abord ; parmi elles, expiration la plus proche ; sinon meilleur score.
+function sortByFreshness(list) {
+  return [...list].sort((a, b) => {
+    const ea = isExpired(a) ? 1 : 0, eb = isExpired(b) ? 1 : 0;
+    if (ea !== eb) return ea - eb;
+    const da = freshness(a).daysLeft, db = freshness(b).daysLeft;
+    const va = da === null ? 9999 : da, vb = db === null ? 9999 : db;
+    if (va !== vb) return va - vb;
+    return b.score - a.score;
+  });
+}
+
 async function init() {
   try {
     [perso] = await Promise.all([api('/api/perso').catch(()=>null)]);
     const data = await api('/api/postuler-jobs');
-    jobs = (data.jobs || []);
+    jobs = sortByFreshness(data.jobs || []);
     if (!jobs.length) {
       document.getElementById('asst').innerHTML = '<div class="info-card"><span class="icon">📭</span><strong>Aucune offre prête</strong><br>Génère d\'abord les documents depuis l\'onglet Scoring.</div>';
       document.getElementById('count').textContent = '0';

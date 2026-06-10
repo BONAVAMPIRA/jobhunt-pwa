@@ -578,6 +578,18 @@ def get_perso():
     except Exception as e:
         return {"error": str(e)}
 
+@app.get("/api/profil")
+def get_profil():
+    """Profil complet (export Vault) pour le copilote de candidature : champs granulaires
+    (identite, experiences eclatees, formations, certifications, competences)."""
+    try:
+        data = json.loads(PROFILE_JSON.read_text(encoding="utf-8"))
+        keys = ("identite", "experiences", "formations", "certifications",
+                "competences", "realisations_cles", "positionnements_cv")
+        return {k: data.get(k) for k in keys if k in data}
+    except Exception as e:
+        return {"error": str(e)}
+
 class MarkPostule(BaseModel):
     job_id: str
     canal: str = ""

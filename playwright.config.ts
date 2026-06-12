@@ -11,7 +11,11 @@ const useLocalServer = !process.env.BASE_URL;
 
 export default defineConfig({
   testDir: './e2e',
-  fullyParallel: true,
+  // Série + 1 worker : le test d'extension tourne en mode *headed* (Chromium ne
+  // charge les extensions qu'en tête) et vole le focus OS, ce qui fait flaker les
+  // tests headless lancés en parallèle (selectOption/click). On sérialise.
+  fullyParallel: false,
+  workers: 1,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? 'github' : 'list',

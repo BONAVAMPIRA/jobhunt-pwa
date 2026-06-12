@@ -2,5 +2,14 @@
   "name": "jobhunt-pwa",
   "version": "1.0.0",
   "private": true,
-  "engines": { "node": ">=18" }
+  "engines": { "node": ">=18" },
+  "scripts": {
+    "serve": "serve . -l 3000 --no-clipboard",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.49.0",
+    "serve": "^14.2.4"
+  }
 }

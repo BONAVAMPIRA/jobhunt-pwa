@@ -62,6 +62,9 @@
   .btn-prev { background:#2d3748; color:#e0e0e0; }
   .btn-dl   { background:#1d4ed8; color:#fff; }
   .btn-postule { background:#059669; color:#fff; width:100%; padding:11px; font-size:14px; border-radius:10px; }
+  .cv-row { display:flex; gap:8px; align-items:center; }
+  .cv-select { background:#1f2937; border:1px solid #2d3748; color:#e0e0e0; font-size:12px; padding:7px 8px; border-radius:8px; flex:1; }
+  .cv-note { font-size:10px; color:#6b7280; margin-top:9px; line-height:1.45; }
 
   .info-card { background:#16213e; border:1px dashed #2d3748; border-radius:12px; padding:22px; text-align:center;
                color:#6b7280; font-size:13px; line-height:1.6; }
@@ -132,11 +135,15 @@
 </div>
 
 <script>
+// Le CV a son propre bloc (PDF RenderCV par offre). LM/Salaire/Guide restent en md/docx.
 const DOCS = [
-  { type:'cv',      label:'CV',                fmt:'format TI Québec' },
   { type:'lm',      label:'Lettre de motivation', fmt:'format lettre' },
   { type:'salaire', label:'Analyse salariale', fmt:'référence' },
   { type:'guide',   label:'Guide d\'entretien', fmt:'référence' },
+];
+const CV_VARIANTS = [
+  ['auto',"Auto (selon l'offre)"], ['BI','BI'], ['BA','BA'], ['Hybride','Hybride'],
+  ['Solutions_Affaires',"Solutions d'affaires"], ['ERP_CRM','ERP / CRM'], ['Power_Platform','Power Platform'],
 ];
 let jobs = [], perso = null, currentId = null;
 
@@ -224,7 +231,16 @@ function selectJob(id) {
       ${isExpired(j)?`<div style="background:#2d1b1b;color:#f87171;font-size:12px;padding:7px 9px;border-radius:6px;margin-top:8px">⛔ Offre probablement expirée${freshness(j).estimated?' (estimé d\'après l\'âge de l\'annonce, ~'+LIFESPAN_DAYS+'j)':''}. Vérifie qu'elle accepte encore les candidatures avant d'y passer du temps.</div>`:''}
     </div>
     ${personaBlock()}
-    <div class="block"><h2>📄 Documents</h2>${docRows}</div>
+    <div class="block"><h2>📄 CV — PDF par offre</h2>
+      <div class="cv-row">
+        <select id="cvVariant" class="cv-select" title="Variante du CV">
+          ${CV_VARIANTS.map(([v,l])=>`<option value="${v}">${l}</option>`).join('')}
+        </select>
+        <button class="btn btn-dl" id="cvGenBtn" onclick="generateCvPdf('${id}', this)">Générer le PDF</button>
+      </div>
+      <div class="cv-note" id="cvNote">Généré depuis ton profil Obsidian au standard TI Québec. La variante est auto-détectée selon l'offre — modifiable avant génération.</div>
+    </div>
+    <div class="block"><h2>📄 Autres documents</h2>${docRows}</div>
     <div class="block"><h2>✅ Statut</h2>
       <button class="btn-postule" onclick="markPostule('${id}')">📮 Marquer comme postulé</button>
     </div>`;
@@ -256,6 +272,34 @@ async function download(id, type, btn) {
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(a.href), 4000);
   } catch (e) { alert('Téléchargement échoué : ' + e.message); }
+  btn.textContent = old; btn.disabled = false;
+}
+
+async function generateCvPdf(id, btn) {
+  const sel = document.getElementById('cvVariant');
+  const variant = sel ? sel.value : 'auto';
+  const note = document.getElementById('cvNote');
+  const old = btn.textContent; btn.textContent = '⏳ Génération…'; btn.disabled = true;
+  try {
+    const res = await fetch(`/api/cv-pdf?job_id=${encodeURIComponent(id)}&variant=${encodeURIComponent(variant)}`, { cache:'no-store' });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const used = res.headers.get('X-CV-Variant') || variant;
+    const blob = await res.blob();
+    const cd = res.headers.get('Content-Disposition') || '';
+    const m = cd.match(/filename="?([^"]+)"?/);
+    const fname = m ? m[1] : `CV_${id}.pdf`;
+    const url = URL.createObjectURL(blob);
+    // Aperçu dans la modale (relecture avant upload) + lien de téléchargement — pas de popup.
+    document.getElementById('modalTitle').textContent = `CV — variante ${used}`;
+    document.getElementById('modalBody').innerHTML =
+      `<iframe title="Aperçu CV" src="${url}" style="width:100%;height:68vh;border:0;background:#fff;border-radius:8px"></iframe>
+       <div style="padding:10px 0 2px"><a class="btn btn-dl" href="${url}" download="${esc(fname)}" style="text-decoration:none">⬇ Télécharger le PDF</a></div>`;
+    document.getElementById('modal').classList.add('open');
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+    if (note) note.innerHTML = `✅ CV généré — variante <strong>${esc(used)}</strong>. Relis l'aperçu, puis upload le PDF dans le formulaire.`;
+  } catch (e) {
+    if (note) note.textContent = '⚠ Échec : ' + e.message;
+  }
   btn.textContent = old; btn.disabled = false;
 }
 

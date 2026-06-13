@@ -176,6 +176,43 @@
   }
   .relay-btn:active { opacity: 0.8; }
 
+  /* Boucle retour vers Claude (depuis une réponse Hermes) */
+  .claude-relay {
+    align-self: flex-start;
+    margin-top: 6px;
+    background: #0b2546;
+    border: 1px solid #2563eb;
+    border-radius: 10px;
+    padding: 10px 12px;
+    max-width: 85%;
+  }
+  .relay-label-c {
+    font-size: 10px; font-weight: 800;
+    color: #7eb8f7; letter-spacing: 0.08em; margin-bottom: 7px;
+  }
+  .relay-btn-c {
+    background: #2563eb; border: none; border-radius: 6px;
+    color: #fff; font-size: 12px; font-weight: 700;
+    padding: 6px 14px; cursor: pointer; width: 100%;
+  }
+  .relay-btn-c:active { opacity: 0.8; }
+  .relay-btn-c:disabled { background: #374151; cursor: default; }
+
+  /* Puces d'action rapide (mode Claude) */
+  .quick-actions {
+    display: flex; flex-wrap: wrap; gap: 6px;
+    padding: 0 14px 4px;
+    flex-shrink: 0;
+  }
+  .quick-actions.hidden { display: none; }
+  .chip {
+    background: #16213e; border: 1px solid #2d3748;
+    color: #cfe3ff; border-radius: 16px;
+    font-size: 11px; font-weight: 600;
+    padding: 5px 12px; cursor: pointer;
+  }
+  .chip:active { background: #1e293b; }
+
   .input-bar {
     padding: 10px 12px;
     border-top: 1px solid #2d3748;
@@ -290,6 +327,11 @@
 <!-- Fil Hermes (séparé) -->
 <div id="thread-hermes" class="thread">
   <div class="msg system">Hermes Agent — VPS Oracle Cloud. Réponse en ~30s.</div>
+</div>
+
+<div id="quick-actions" class="quick-actions">
+  <button class="chip" onclick="readHermesIdeas()">📋 Idées d'Hermes</button>
+  <button class="chip" onclick="askProjectState()">📍 Où on en est ?</button>
 </div>
 
 <div class="input-bar">
@@ -408,6 +450,7 @@ function setMode(m) {
 
   threadClaude.classList.toggle('visible', isClaude);
   threadHermes.classList.toggle('visible', !isClaude);
+  document.getElementById('quick-actions').classList.toggle('hidden', !isClaude);
   currentThread().scrollTop = currentThread().scrollHeight;
 }
 
@@ -470,8 +513,11 @@ function addHermesWaiting(thread) {
   return { wrap, timer };
 }
 
-async function sendClaude(text) {
-  addMsg(threadClaude, text, 'user');
+async function sendClaude(text, displayNote) {
+  // displayNote : si fourni, on affiche une note système courte au lieu du
+  // message brut (utile pour réinjecter un gros résultat Hermes proprement).
+  if (displayNote) addMsg(threadClaude, displayNote, 'system');
+  else addMsg(threadClaude, text, 'user');
   const bubble = addLabeledMsg(threadClaude, 'claude', 'CLAUDE', 'label-claude');
   const cursor = document.createElement('span');
   cursor.className = 'cursor';
@@ -520,15 +566,21 @@ async function sendClaude(text) {
       const task = hermesMatch[1].trim();
       // Nettoyer le texte affiché (enlever le tag)
       displayText = fullText.replace(/\[HERMES:[\s\S]+?\]/, '').trim();
-      // Ajouter le bloc relay
+      // Ajouter le bloc relay (addEventListener + textContent : pas d'injection
+      // via attribut onclick — les guillemets d'une tâche cassaient l'attribut).
       const relay = document.createElement('div');
       relay.className = 'hermes-relay';
-      relay.innerHTML = `
-        <div class="relay-label">⚡ TÂCHE HERMES DÉTECTÉE</div>
-        <div class="relay-task">${task}</div>
-        <button class="relay-btn" onclick="sendToHermes(${JSON.stringify(task)}, this)">
-          Envoyer à Hermes ➤
-        </button>`;
+      const rLabel = document.createElement('div');
+      rLabel.className = 'relay-label';
+      rLabel.textContent = '⚡ TÂCHE HERMES DÉTECTÉE';
+      const rTask = document.createElement('div');
+      rTask.className = 'relay-task';
+      rTask.textContent = task;
+      const rBtn = document.createElement('button');
+      rBtn.className = 'relay-btn';
+      rBtn.textContent = 'Envoyer à Hermes ➤';
+      rBtn.addEventListener('click', () => sendToHermes(task, rBtn));
+      relay.append(rLabel, rTask, rBtn);
       threadClaude.appendChild(relay);
       threadClaude.scrollTop = threadClaude.scrollHeight;
     }
@@ -575,15 +627,59 @@ async function sendHermes(text) {
       sessionStorage.setItem('hermes_session', data.session_id);
     }
 
+    const result = data.response || 'Pas de réponse.';
     const bubble = addLabeledMsg(threadHermes, 'hermes', 'HERMES', 'label-hermes');
     bubble.classList.add('md');
-    bubble.innerHTML = renderMarkdown(data.response || 'Pas de réponse.');
+    bubble.innerHTML = renderMarkdown(result);
+
+    // Boucle retour : Claude (cerveau) peut analyser ce résultat
+    const back = document.createElement('div');
+    back.className = 'claude-relay';
+    back.innerHTML = `
+      <div class="relay-label-c">↩ BOUCLER VERS CLAUDE</div>
+      <button class="relay-btn-c">Analyser ce résultat avec Claude ➤</button>`;
+    back.querySelector('button').addEventListener('click', (e) => relayToClaude(text, result, e.target));
+    threadHermes.appendChild(back);
     threadHermes.scrollTop = threadHermes.scrollHeight;
   } catch (e) {
     clearInterval(timer);
     wrap.remove();
     addMsg(threadHermes, 'Hermes inaccessible. Essaie le mode Claude.', 'system');
   }
+}
+
+// Réinjecte le résultat d'Hermes dans le cerveau (Claude) pour qu'il enchaîne.
+async function relayToClaude(task, result, btn) {
+  if (btn) { btn.disabled = true; btn.textContent = 'Transmis à Claude ✓'; }
+  setMode('claude');
+  const payload =
+    `Hermes (les mains sur le VPS) a exécuté cette tâche :\n« ${task} »\n\n` +
+    `Résultat obtenu :\n${result}\n\n` +
+    `Analyse ce résultat et dis-moi la prochaine étape. ` +
+    `Si une nouvelle action VPS est nécessaire, émets un nouveau tag [HERMES: ...].`;
+  sendBtn.disabled = true;
+  await sendClaude(payload, '↩ Résultat d\'Hermes transmis à Claude');
+  sendBtn.disabled = false;
+}
+
+// Puce : faire lire et résumer les suggestions d'amélioration d'Hermes.
+async function readHermesIdeas() {
+  setMode('claude');
+  sendBtn.disabled = true;
+  await sendClaude(
+    'Demande à Hermes de lire ses propres suggestions d\'amélioration ' +
+    '(fichier agents/memory/suggestions.md) et de me les résumer, ' +
+    'puis aide-moi à décider lesquelles valent la peine d\'être actionnées.'
+  );
+  sendBtn.disabled = false;
+}
+
+// Puce : état réel du projet (le contexte temps réel est injecté côté serveur).
+async function askProjectState() {
+  setMode('claude');
+  sendBtn.disabled = true;
+  await sendClaude('Où en est le projet exactement, et quelle est la prochaine étape prioritaire ?');
+  sendBtn.disabled = false;
 }
 
 async function send() {

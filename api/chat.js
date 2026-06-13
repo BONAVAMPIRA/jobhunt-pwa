@@ -128,12 +128,19 @@ async function handleClaude(message, history) {
   }
 
   const projectStatus = await getProjectStatus();
-  const systemWithStatus = SYSTEM_CLAUDE + projectStatus;
 
   const messages = [
     ...history.map(h => ({ role: h.role, content: h.content })),
     { role: 'user', content: message }
   ];
+
+  // Prompt caching : le gros contexte (SYSTEM_CLAUDE, stable) est mis en cache
+  // → ~90 % moins cher sur les messages suivants (TTL 5 min). Le statut temps
+  // réel (volatil, avec timestamp) reste hors cache, après le point de césure.
+  const systemBlocks = [
+    { type: 'text', text: SYSTEM_CLAUDE, cache_control: { type: 'ephemeral' } },
+  ];
+  if (projectStatus) systemBlocks.push({ type: 'text', text: projectStatus });
 
   const upstream = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
@@ -146,7 +153,7 @@ async function handleClaude(message, history) {
       model: 'claude-sonnet-4-6',
       max_tokens: 2048,
       stream: true,
-      system: systemWithStatus,
+      system: systemBlocks,
       messages,
     }),
   });
@@ -167,6 +174,8 @@ async function handleClaude(message, history) {
     const reader = upstream.body.getReader();
     const decoder = new TextDecoder();
     let buf = '';
+    // Décompte de tokens pour le garde-fou budget (affiché côté PWA).
+    const usage = { input: 0, output: 0, cache_read: 0, cache_write: 0 };
     try {
       while (true) {
         const { done, value } = await reader.read();
@@ -182,11 +191,23 @@ async function handleClaude(message, history) {
             const evt = JSON.parse(data);
             if (evt.type === 'content_block_delta' && evt.delta?.text) {
               await writer.write(encoder.encode(`data: ${JSON.stringify({ token: evt.delta.text })}\n\n`));
+            } else if (evt.type === 'message_start' && evt.message?.usage) {
+              const u = evt.message.usage;
+              usage.input = u.input_tokens || 0;
+              usage.cache_read = u.cache_read_input_tokens || 0;
+              usage.cache_write = u.cache_creation_input_tokens || 0;
+            } else if (evt.type === 'message_delta' && evt.usage) {
+              usage.output = evt.usage.output_tokens || 0;
             }
           } catch (_) {}
         }
       }
     } finally {
+      // Coût de l'échange (tarifs Sonnet 4.6 : 3 $/M in, 15 $/M out ;
+      // cache : lecture 0,30 $/M, écriture 3,75 $/M).
+      const cost = (usage.input * 3 + usage.output * 15
+        + usage.cache_read * 0.30 + usage.cache_write * 3.75) / 1e6;
+      await writer.write(encoder.encode(`data: ${JSON.stringify({ usage, cost })}\n\n`));
       await writer.write(encoder.encode('data: [DONE]\n\n'));
       await writer.close();
     }

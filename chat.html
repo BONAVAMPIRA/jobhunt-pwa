@@ -110,6 +110,8 @@
     flex-shrink: 0;
   }
   .countdown-ring svg { transform: rotate(-90deg); }
+  .countdown-ring.spinning svg { animation: ring-spin 0.9s linear infinite; transform-origin: 50% 50%; }
+  @keyframes ring-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
   .countdown-ring circle {
     fill: none;
     stroke: #065f46;
@@ -350,7 +352,7 @@
 
 <!-- Fil Hermes (séparé) -->
 <div id="thread-hermes" class="thread">
-  <div class="msg system">Hermes Agent — VPS Oracle Cloud. Réponse en ~30s.</div>
+  <div class="msg system">Hermes Agent — exécute tes tâches sur le VPS. La réponse arrive dès qu'il a fini.</div>
 </div>
 
 <div id="quick-actions" class="quick-actions">
@@ -554,29 +556,28 @@ function addHermesWaiting(thread) {
 
   const r = 15, circ = 2 * Math.PI * r;
   wrap.innerHTML = `
-    <div class="hermes-bubble-wait" id="wait-text">Hermes réfléchit…</div>
-    <div class="countdown-ring">
+    <div class="hermes-bubble-wait" id="wait-text">Hermes travaille…</div>
+    <div class="countdown-ring spinning">
       <svg width="36" height="36" viewBox="0 0 36 36">
         <circle class="track" cx="18" cy="18" r="${r}" stroke-dasharray="${circ}" stroke-dashoffset="0"/>
         <circle id="ring-fill" cx="18" cy="18" r="${r}"
           stroke="#34d399"
-          stroke-dasharray="${circ}"
+          stroke-dasharray="${circ * 0.28} ${circ}"
           stroke-dashoffset="0"/>
       </svg>
-      <div class="countdown-num" id="ring-num">30</div>
+      <div class="countdown-num" id="ring-num">0s</div>
     </div>`;
 
   thread.appendChild(wrap);
   thread.scrollTop = thread.scrollHeight;
 
-  let secs = 30;
-  const fill = wrap.querySelector('#ring-fill');
+  let secs = 0;
   const num = wrap.querySelector('#ring-num');
+  // Compteur de temps écoulé (monte). Pas de budget fixe : la bulle disparaît
+  // dès qu'Hermes répond (clearInterval + wrap.remove dans sendHermes).
   const timer = setInterval(() => {
-    secs--;
-    num.textContent = secs;
-    fill.style.strokeDashoffset = circ * (1 - secs / 30);
-    if (secs <= 0) { clearInterval(timer); num.textContent = '…'; }
+    secs++;
+    num.textContent = secs + 's';
   }, 1000);
 
   return { wrap, timer };
@@ -643,13 +644,13 @@ async function sendClaude(text, displayNote) {
       relay.className = 'hermes-relay';
       const rLabel = document.createElement('div');
       rLabel.className = 'relay-label';
-      rLabel.textContent = '⚡ TÂCHE HERMES DÉTECTÉE';
+      rLabel.textContent = '⚡ TÂCHE À EXÉCUTER SUR LE VPS (via Hermes)';
       const rTask = document.createElement('div');
       rTask.className = 'relay-task';
       rTask.textContent = task;
       const rBtn = document.createElement('button');
       rBtn.className = 'relay-btn';
-      rBtn.textContent = 'Envoyer à Hermes ➤';
+      rBtn.textContent = '📤 Envoyer cette tâche à Hermes';
       rBtn.addEventListener('click', () => sendToHermes(task, rBtn));
       relay.append(rLabel, rTask, rBtn);
       threadClaude.appendChild(relay);
@@ -673,8 +674,9 @@ async function sendClaude(text, displayNote) {
 
 async function sendToHermes(task, btn) {
   btn.disabled = true;
-  btn.textContent = 'Envoyé ✓';
-  // Switcher sur le fil Hermes et envoyer
+  btn.textContent = '📤 Envoyé à Hermes ✓';
+  // Trace dans le fil Claude ce qui part (continuité), puis bascule sur Hermes.
+  addMsg(threadClaude, '📤 Tâche transmise à Hermes : ' + task, 'system');
   setMode('hermes');
   await sendHermes(task);
 }

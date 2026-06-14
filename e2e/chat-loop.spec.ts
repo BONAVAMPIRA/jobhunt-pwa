@@ -64,6 +64,29 @@ test('boucle Claude→Hermes→Claude : le résultat revient au cerveau', async 
   await expect(page.locator('#thread-claude .msg.claude.md').last()).toContainText('mort depuis le 4 juin');
 });
 
+test('un tag d\'EXEMPLE cité par Claude n\'est pas relayé — seule la vraie tâche finale l\'est', async ({ page }) => {
+  // Reproduit le bug "boucle" : Claude illustre le mécanisme avec un tag gabarit,
+  // puis émet la vraie tâche à la fin. Le relais doit ignorer le gabarit.
+  await page.route('**/api/chat', async (route) => {
+    const reply =
+      'Voici comment ça marche : j\'émets [HERMES: description précise de la tâche en français] ' +
+      'et le PWA te propose de l\'envoyer.\n\n[HERMES: lis le fichier scoring_memory.json et résume les patterns]';
+    const sse = 'data: ' + JSON.stringify({ token: reply }) + '\n\n' + 'data: [DONE]\n\n';
+    await route.fulfill({ status: 200, headers: { 'Content-Type': 'text/event-stream' }, body: sse });
+  });
+  await page.goto('/chat.html');
+
+  await page.locator('#msg-input').fill('Explique-moi la boucle');
+  await page.locator('#send-btn').click();
+
+  const relayTask = page.locator('#thread-claude .relay-task');
+  await expect(relayTask).toBeVisible();
+  await expect(relayTask).toContainText('scoring_memory.json');
+  await expect(relayTask).not.toContainText('description précise');
+  // Un seul relais (pas un par tag)
+  await expect(page.locator('#thread-claude .hermes-relay')).toHaveCount(1);
+});
+
 test('puce "Idées d\'Hermes" : envoie une demande de lecture de suggestions.md', async ({ page }) => {
   await mockChat(page);
   await page.goto('/chat.html');

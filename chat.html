@@ -368,7 +368,7 @@
 <nav class="nav">
   <a href="/chat.html" class="active"><span>💬</span>Chat</a>
   <a href="/scoring.html"><span>📋</span>Scoring</a>
-  <a href="/postuler.html"><span>📮</span>Postuler</a>
+  <a href="/systeme.html"><span>⚙️</span>Système</a>
 </nav>
 
 <script>
@@ -631,13 +631,22 @@ async function sendClaude(text, displayNote) {
     }
     cursor.remove();
 
-    // Détecter [HERMES: tâche] dans la réponse
-    let displayText = fullText;
-    const hermesMatch = fullText.match(/\[HERMES:\s*([\s\S]+?)\]/);
-    if (hermesMatch) {
-      const task = hermesMatch[1].trim();
-      // Nettoyer le texte affiché (enlever le tag)
-      displayText = fullText.replace(/\[HERMES:[\s\S]+?\]/, '').trim();
+    // Détecter les tags [HERMES: tâche]. Claude insère parfois des tags d'EXEMPLE
+    // en expliquant le mécanisme (« description précise… », « tâche précise »).
+    // On retire TOUS les tags de l'affichage (même en code inline `...`), on ignore
+    // les gabarits, et on ne relaie QUE la dernière vraie tâche (la consigne dit
+    // « ajoute à la fin »). Évite la boucle : un exemple cité n'est plus relayé.
+    let displayText = fullText.replace(/`?\[HERMES:[\s\S]+?\]`?/g, '').trim();
+    const allTasks = [...fullText.matchAll(/\[HERMES:\s*([\s\S]+?)\]/g)].map(m => m[1].trim());
+    const isPlaceholder = t => {
+      const n = t.toLowerCase().replace(/[\s.…]+$/, '');
+      return n.length < 12 || n === 'tâche' || n === 'tâche précise'
+        || n.startsWith('description précise') || n.startsWith('tâche mécanique')
+        || n.startsWith('tâche à exécuter');
+    };
+    const realTasks = allTasks.filter(t => t && !isPlaceholder(t));
+    const task = realTasks.length ? realTasks[realTasks.length - 1] : null;
+    if (task) {
       // Ajouter le bloc relay (addEventListener + textContent : pas d'injection
       // via attribut onclick — les guillemets d'une tâche cassaient l'attribut).
       const relay = document.createElement('div');

@@ -249,7 +249,7 @@
 <body>
 
 <div class="header">
-  <h1>Scoring <span style="font-size:9px;color:#4b5563;font-weight:400;">build v12</span></h1>
+  <h1>Scoring <span style="font-size:9px;color:#4b5563;font-weight:400;">build v13</span></h1>
   <div class="header-right">
     <span class="count-badge" id="count">—</span>
     <button class="sort-btn active" id="sort-prio" onclick="setSort('prio')">Urgence</button>
@@ -564,18 +564,43 @@ async function submitContest(jobId, evt) {
   const oldScore = (jobs.find(j => j.job_id === jobId) || {}).score;
   const actionsDiv = card.querySelector('.card-actions');
   actionsDiv.style.flexDirection = 'row';
-  actionsDiv.innerHTML = `<div style="width:100%;padding:8px 0;text-align:center;color:#7eb8f7;font-size:12px;">⏳ Claude révise le score…</div>`;
+  actionsDiv.innerHTML = `<div style="width:100%;padding:8px 0;text-align:center;color:#7eb8f7;font-size:12px;">⏳ Claude révise le score… <span style="color:#6b7280">(~30 s)</span></div>`;
+
+  const fail = () => {
+    actionsDiv.innerHTML = `<div style="width:100%;padding:8px 0;text-align:center;color:#f87171;font-size:12px;">⚠ Échec de la révision — <button class="sort-btn" onclick="openContest('${jobId}', event)">Réessayer</button></div>`;
+  };
+
+  // Le re-scoring (WF Sonnet) dépasse le timeout Vercel → le backend le lance en
+  // tâche de fond et on récupère le résultat en sondant /api/rescore-result.
   try {
     const res = await fetch('/api/rescore', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ job_id: jobId, comment }),
     });
-    if (!res.ok) throw new Error('rescore failed');
-    const data = await res.json();
-    applyRevision(card, jobId, data, oldScore);
+    if (!res.ok) throw new Error('start failed');
+
+    let tries = 0;
+    const poll = async () => {
+      tries++;
+      try {
+        const r = await fetch(`/api/rescore-result?job_id=${encodeURIComponent(jobId)}`, { cache: 'no-store' });
+        if (r.ok) {
+          const d = await r.json();
+          if (d.ready) {
+            const result = d.result || {};
+            if (result.error) { fail(); return; }
+            applyRevision(card, jobId, result, oldScore);
+            return;
+          }
+        }
+      } catch (_) {}
+      if (tries > 40) { fail(); return; }   // ~40 × 3 s = 2 min max
+      setTimeout(poll, 3000);
+    };
+    setTimeout(poll, 3000);
   } catch (e) {
-    actionsDiv.innerHTML = `<div style="width:100%;padding:8px 0;text-align:center;color:#f87171;font-size:12px;">⚠ Échec de la révision — <button class="sort-btn" onclick="openContest('${jobId}', event)">Réessayer</button></div>`;
+    fail();
   }
 }
 

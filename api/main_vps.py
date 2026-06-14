@@ -1,4 +1,4 @@
-import subprocess, os, json, csv, io, re, hmac, unicodedata
+import subprocess, os, json, csv, io, re, hmac, unicodedata, threading, time
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -286,23 +286,57 @@ class RescoreRequest(BaseModel):
     job_id: str
     comment: str
 
-@app.post("/api/rescore")
-def rescore(req: RescoreRequest):
-    """Contestation d'un score : relaie vers WF-M3d-Rescore (n8n a l'OAuth Sheets en écriture).
-    Claude révise le score à la lumière du commentaire, met à jour SCORED_JOBS + scoring_memory.json."""
+# Re-scoring asynchrone : l'appel WF-M3d-Rescore (Claude Sonnet) dure 20-60 s,
+# au-delà du timeout des fonctions Vercel (~25 s) -> le PWA recevait une erreur.
+# On découple : /api/rescore lance le travail en tâche de fond et répond tout de
+# suite ; le PWA sonde /api/rescore-result jusqu'à ce que le score révisé arrive.
+# Stockage en mémoire process (uvicorn 1 worker) ; perdu si l'API redémarre
+# pendant la révision -> le PWA retombe en timeout et propose de réessayer.
+_RESCORE_RESULTS = {}     # job_id -> dict résultat du WF (ou {"error": ...})
+_RESCORE_PENDING = set()  # job_id dont la révision est en cours
+
+def _store_rescore(job_id, result):
+    # Garde-fou anti-fuite : purge les résultats jamais lus de plus de 10 min
+    # (onglet fermé, polling abandonné) avant d'écrire le nouveau.
+    now = time.time()
+    for k in [k for k, v in list(_RESCORE_RESULTS.items()) if now - v.get("_ts", now) > 600]:
+        _RESCORE_RESULTS.pop(k, None)
+    result["_ts"] = now
+    _RESCORE_RESULTS[job_id] = result
+
+def _run_rescore(job_id, comment):
     url = f"{N8N_BASE}/m3d-rescore"
-    payload = json.dumps({"job_id": req.job_id, "comment": req.comment}).encode()
+    payload = json.dumps({"job_id": job_id, "comment": comment}).encode()
     try:
         with urllib.request.urlopen(
             urllib.request.Request(url, data=payload,
-                headers={"Content-Type": "application/json"}), timeout=90) as r:
+                headers={"Content-Type": "application/json"}), timeout=120) as r:
             body = r.read().decode("utf-8")
         try:
-            return json.loads(body)
+            _store_rescore(job_id, json.loads(body))
         except Exception:
-            return {"ok": False, "raw": body[:300]}
+            _store_rescore(job_id, {"ok": False, "raw": body[:300]})
     except Exception as e:
-        raise HTTPException(status_code=502, detail=f"rescore failed: {str(e)[:120]}")
+        _store_rescore(job_id, {"error": f"rescore failed: {str(e)[:120]}"})
+    finally:
+        _RESCORE_PENDING.discard(job_id)
+
+@app.post("/api/rescore")
+def rescore(req: RescoreRequest):
+    """Contestation d'un score : relaie vers WF-M3d-Rescore (n8n a l'OAuth Sheets en écriture).
+    Asynchrone : lance la révision en tâche de fond et répond immédiatement.
+    Le PWA récupère le résultat via /api/rescore-result?job_id=..."""
+    _RESCORE_RESULTS.pop(req.job_id, None)
+    _RESCORE_PENDING.add(req.job_id)
+    threading.Thread(target=_run_rescore, args=(req.job_id, req.comment), daemon=True).start()
+    return {"ok": True, "pending": True, "job_id": req.job_id}
+
+@app.get("/api/rescore-result")
+def rescore_result(job_id: str):
+    """Renvoie le résultat du re-scoring si prêt (et le consomme), sinon l'état d'attente."""
+    if job_id in _RESCORE_RESULTS:
+        return {"ready": True, "result": _RESCORE_RESULTS.pop(job_id)}
+    return {"ready": False, "pending": job_id in _RESCORE_PENDING}
 
 # ── Services & Crons ──
 

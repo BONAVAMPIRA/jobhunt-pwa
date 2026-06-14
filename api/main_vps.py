@@ -1,4 +1,4 @@
-import subprocess, os, json, csv, io, re, hmac, unicodedata, threading, time
+import subprocess, os, json, csv, io, re, hmac, unicodedata, tempfile, shutil, threading, time
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -54,8 +54,14 @@ OUTPUT_DIR      = Path("/home/ubuntu/n8n-jobhunt/output")
 CANDIDATURES    = OUTPUT_DIR / "candidatures"
 MEMORY_PATH     = OUTPUT_DIR / "scoring_memory.json"
 N8N_BASE        = "http://localhost:5678/webhook"
-TELEGRAM_TOKEN  = os.environ.get("TELEGRAM_BOT_TOKEN", "")
-TELEGRAM_CHAT   = os.environ.get("TELEGRAM_CHAT_ID", "6075696502")
+# ── CV par offre (B4) : RenderCV tourne sur le VPS dans un venv isolé ──
+CV_PIPELINE     = Path("/home/ubuntu/cockpit-sync/cv/pipeline")
+CV_VENV_PY      = CV_PIPELINE / ".venv" / "bin" / "python"
+CV_RENDERCV     = CV_PIPELINE / ".venv" / "bin" / "rendercv"
+CV_VARIANTS     = ("BI", "BA", "Hybride", "Solutions_Affaires", "ERP_CRM", "Power_Platform")
+# 1 rendu RenderCV à la fois : Typst+PNG sont gourmands et le VPS est contraint
+# (n8n = SPOF sur la même machine). Évite la saturation du threadpool sur appels concurrents.
+_CV_RENDER_LOCK = threading.Semaphore(1)
 
 M3C_WEBHOOKS = {
     "cv":      f"{N8N_BASE}/m3c-cv-v2",
@@ -72,7 +78,14 @@ DECK_EXCLUDE = {
     "genere", "généré", "a_postuler",
     "postule", "postulé", "abandonne", "abandonné",
     "ignore", "ignoré", "expire", "expiré",
+    "doublon",                              # doublon masqué (était visible par erreur)
+    "entrevue", "offre", "refuse", "refusé",  # funnel post-candidature -> onglet Suivi
 }
+
+# Statuts « post-candidature » affichés dans l'onglet Suivi (candidature envoyée et au-delà).
+# Le funnel entrevue/offre/refusé est prévu (gros chantier suivi) ; déjà reconnu ici pour
+# que tes éditions manuelles dans le Sheet n'atterrissent pas dans le deck par accident.
+SUIVI_STATUTS = {"postule", "postulé", "entrevue", "offre", "refuse", "refusé"}
 
 # ── Helpers ──────────────────────────────────────────────
 
@@ -140,6 +153,24 @@ def crontab_lines():
 def write_crontab(lines):
     new_ct = "\n".join(lines) + "\n"
     subprocess.run(["crontab", "-"], input=new_ct, text=True)
+
+def guess_variant(positionnement):
+    """Devine la variante CV depuis le texte narratif du positionnement de l'offre.
+    Défaut sûr = Hybride ; l'utilisateur peut surcharger côté copilote."""
+    t = (positionnement or "").lower()
+    if any(k in t for k in ("power apps", "power automate", "power platform", "citizen dev")):
+        return "Power_Platform"
+    if any(k in t for k in ("erp", "crm", "dynamics", "business central", " sap")):
+        return "ERP_CRM"
+    has_bi = any(k in t for k in ("power bi", "intelligence d'affaires", "dax", "tableau", " bi "))
+    has_ba = any(k in t for k in ("analyse d'affaires", "analyste d'affaires", "business analyst", "bpmn", "babok"))
+    if has_bi and has_ba:
+        return "Hybride"
+    if has_ba:
+        return "BA"
+    if has_bi:
+        return "BI"
+    return "Hybride"
 
 # ── Endpoints ─────────────────────────────────────────────
 
@@ -290,14 +321,11 @@ class RescoreRequest(BaseModel):
 # au-delà du timeout des fonctions Vercel (~25 s) -> le PWA recevait une erreur.
 # On découple : /api/rescore lance le travail en tâche de fond et répond tout de
 # suite ; le PWA sonde /api/rescore-result jusqu'à ce que le score révisé arrive.
-# Stockage en mémoire process (uvicorn 1 worker) ; perdu si l'API redémarre
-# pendant la révision -> le PWA retombe en timeout et propose de réessayer.
 _RESCORE_RESULTS = {}     # job_id -> dict résultat du WF (ou {"error": ...})
 _RESCORE_PENDING = set()  # job_id dont la révision est en cours
 
 def _store_rescore(job_id, result):
-    # Garde-fou anti-fuite : purge les résultats jamais lus de plus de 10 min
-    # (onglet fermé, polling abandonné) avant d'écrire le nouveau.
+    # Garde-fou anti-fuite : purge les résultats jamais lus de plus de 10 min.
     now = time.time()
     for k in [k for k, v in list(_RESCORE_RESULTS.items()) if now - v.get("_ts", now) > 600]:
         _RESCORE_RESULTS.pop(k, None)
@@ -359,6 +387,40 @@ def get_services():
         services["n8n-jobhunt"] = "unknown"
     return services
 
+# ── Securite crons (sprint P0) : verrouiller la CREATION/EDITION ────────────
+# Sans ca, un appel authentifie pouvait ecrire n'importe quelle commande dans le
+# crontab puis la declencher = RCE. On n'autorise que : planning cron valide (5
+# champs), aucune metacaractere shell, et des commandes qui pointent vers des
+# repertoires connus du projet.
+ALLOWED_CRON_DIRS = ("/home/ubuntu/cockpit/", "/home/ubuntu/cockpit-sync/",
+                     "/home/ubuntu/n8n-jobhunt/")
+ALLOWED_CRON_BINS = ("/usr/bin/python3", "python3", "/bin/bash", "bash", "/bin/sh", "sh")
+_CRON_SCHEDULE_RE = re.compile(r"^[\d*/,\-]+(\s+[\d*/,\-]+){4}$")
+_CRON_FORBIDDEN_RE = re.compile(r"[;&|`$<>(){}\\\n\r]")
+
+def _validate_cron_schedule(schedule: str):
+    if not _CRON_SCHEDULE_RE.match((schedule or "").strip()):
+        raise HTTPException(status_code=400,
+                            detail="Planning cron invalide (5 champs: min heure jour mois jour-semaine)")
+
+def _validate_cron_command(command: str):
+    command = (command or "").strip()
+    if not command:
+        raise HTTPException(status_code=400, detail="Commande vide")
+    if _CRON_FORBIDDEN_RE.search(command):
+        raise HTTPException(status_code=400,
+                            detail="Commande refusee : metacaractere shell interdit (; & | $ ` < > ...)")
+    tokens = command.split()
+    if tokens[0] not in ALLOWED_CRON_BINS and not tokens[0].startswith(ALLOWED_CRON_DIRS):
+        raise HTTPException(status_code=400, detail="Commande refusee : binaire non autorise")
+    # tout chemin absolu cite doit etre sous un repertoire autorise
+    # (on saute les interpreteurs connus comme /usr/bin/python3)
+    for p in re.findall(r"/\S+", command):
+        if p in ALLOWED_CRON_BINS:
+            continue
+        if not p.startswith(ALLOWED_CRON_DIRS):
+            raise HTTPException(status_code=400, detail=f"Commande refusee : chemin non autorise ({p})")
+
 @app.get("/api/crons")
 def list_crons():
     lines = crontab_lines()
@@ -386,8 +448,10 @@ class CronAdd(BaseModel):
 
 @app.post("/api/crons")
 def add_cron(req: CronAdd):
+    _validate_cron_schedule(req.schedule)
+    _validate_cron_command(req.command)
     lines = crontab_lines()
-    new_line = f"{req.schedule} {req.command}"
+    new_line = f"{req.schedule.strip()} {req.command.strip()}"
     lines.append(new_line)
     write_crontab(lines)
     return {"ok": True, "added": new_line}
@@ -397,6 +461,7 @@ class CronUpdate(BaseModel):
 
 @app.put("/api/crons/{cron_id}")
 def update_cron(cron_id: int, req: CronUpdate):
+    _validate_cron_schedule(req.schedule)
     lines = crontab_lines()
     non_comment = [l for l in lines if l.strip() and not l.startswith("#")]
     if cron_id >= len(non_comment):
@@ -433,6 +498,10 @@ def trigger_cron(cron_id: int):
     if cron_id >= len(non_comment):
         raise HTTPException(status_code=404, detail="Cron introuvable")
     command = " ".join(non_comment[cron_id].split(None, 5)[5:])
+    # NB : ces crons existent deja dans le crontab et peuvent utiliser de la
+    # syntaxe shell (cd, &&, redirections) -> on garde shell=True ICI (on ne fait
+    # que relancer une ligne deja presente). Le durcissement RCE se fait en amont,
+    # sur la CREATION de cron (POST /api/crons), pas sur le declenchement.
     subprocess.Popen(command, shell=True)
     return {"ok": True, "triggered": command}
 
@@ -514,7 +583,7 @@ def add_journal(req: JournalEntry):
         f.write(entry)
     return {"ok": True}
 
-# ── Module 4 : Postulation ──────────────────────────────
+# ── Module 4 : Candidature ──────────────────────────────
 # Dossier canonique unique par candidature : candidatures/<slug_co>/<slug_role>/
 # contenant les .md (source, generes par M3c) + les .docx (a la demande, ce module).
 
@@ -542,7 +611,7 @@ def row_for_job(job_id):
 
 @app.get("/api/postuler-jobs")
 def postuler_jobs():
-    """Offres au statut 'genere' : docs prets, en attente de postulation."""
+    """Offres au statut 'genere' : docs prets, en attente de candidature."""
     try:
         raw = read_sheet("SCORED_JOBS")
         out = []
@@ -563,11 +632,67 @@ def postuler_jobs():
                 "url": (row.get("url") or "").strip(),
                 "score": score,
                 "deadline": (row.get("deadline") or "").strip(),
-                "date_collecte": (row.get("date_publication") or row.get("date") or "").strip(),
                 "docs": docs,
                 "docs_ready": all(docs.values()),
             })
         out.sort(key=lambda j: -j["score"])
+        return {"jobs": out, "total": len(out)}
+    except Exception as e:
+        return {"jobs": [], "total": 0, "error": str(e)}
+
+# Extrait la prétention (chiffre cible / plancher) de l'analyse salariale .md, pour
+# l'afficher d'un coup d'œil dans le Suivi (le truc qui a manqué lors de l'appel RANDSTAD).
+def parse_salaire_md(md):
+    cible = plancher = ""
+    if not md:
+        return cible, plancher
+    for line in md.splitlines():
+        low = line.lower()
+        m = re.search(r"(\d[\d  .,  ]*\s*\$)", line)
+        if not m:
+            continue
+        val = re.sub(r"\s+", " ", m.group(1)).strip()
+        if not cible and "cible" in low:
+            cible = val
+        elif not plancher and "plancher" in low:
+            plancher = val
+    return cible, plancher
+
+@app.get("/api/suivi")
+def suivi_jobs():
+    """Offres post-candidature (statut 'postulé' et au-delà) : suivi + dossier + prétention."""
+    try:
+        raw = read_sheet("SCORED_JOBS")
+        out = []
+        for row in csv.DictReader(io.StringIO(raw)):
+            if (row.get("statut") or "").strip().lower() not in SUIVI_STATUTS:
+                continue
+            entreprise = (row.get("entreprise") or "").strip()
+            poste = (row.get("poste") or "").strip()
+            docs = {t: doc_md_path(entreprise, poste, t).exists() for t in DOC_PREFIX}
+            cible = plancher = ""
+            sp = doc_md_path(entreprise, poste, "salaire")
+            if sp.exists():
+                try:
+                    cible, plancher = parse_salaire_md(sp.read_text(encoding="utf-8"))
+                except Exception:
+                    pass
+            score = 0
+            try:
+                score = int(float(row.get("score") or 0))
+            except Exception:
+                pass
+            out.append({
+                "job_id": (row.get("job_id") or "").strip(),
+                "poste": poste, "entreprise": entreprise,
+                "url": (row.get("url") or "").strip(),
+                "statut": (row.get("statut") or "").strip().lower(),
+                "score": score,
+                "date": (row.get("date_depot") or row.get("date_candidature") or row.get("date") or "").strip(),
+                "salaire_cible": cible, "salaire_plancher": plancher,
+                "docs": docs, "docs_ready": all(docs.values()),
+            })
+        out.sort(key=lambda j: (j["entreprise"].lower(), j["poste"].lower()))
         return {"jobs": out, "total": len(out)}
     except Exception as e:
         return {"jobs": [], "total": 0, "error": str(e)}
@@ -603,6 +728,58 @@ def get_doc(job_id: str, type: str, format: str = "md"):
             headers={"Content-Disposition": f'attachment; filename="{fname}"'},
         )
     raise HTTPException(status_code=400, detail="format invalide (md|docx)")
+
+@app.get("/api/cv-pdf")
+def cv_pdf(job_id: str, variant: str = "auto"):
+    """B4 — Génère le CV PDF (RenderCV, standard TI Québec) ciblé pour une offre.
+    Source de vérité = vault Obsidian. variant=auto -> heuristique sur le positionnement
+    de l'offre (modifiable côté copilote avant génération finale)."""
+    row = row_for_job(job_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="job_id introuvable")
+    if not (CV_VENV_PY.exists() and CV_RENDERCV.exists()):
+        raise HTTPException(status_code=503, detail="pipeline CV indisponible (venv RenderCV absent)")
+    if variant == "auto":
+        variant = guess_variant(row.get("positionnement"))
+    if variant not in CV_VARIANTS:
+        raise HTTPException(status_code=400, detail=f"variant invalide (auto|{'|'.join(CV_VARIANTS)})")
+    entreprise = (row.get("entreprise") or "").strip()
+    poste = (row.get("poste") or "").strip()
+    # B4.2 — texte de l'offre pour cibler compétences + mandats (tronqué, borné).
+    offer_text = " ".join(str(row.get(k) or "") for k in
+                          ("poste", "positionnement", "offer_mission", "offer_qualif",
+                           "offer_contexte", "offer_autres"))[:4000]
+    env = {**os.environ, "PYTHONUTF8": "1"}
+    if not _CV_RENDER_LOCK.acquire(blocking=False):
+        raise HTTPException(status_code=429, detail="génération CV déjà en cours, réessaie dans un instant")
+    work = Path(tempfile.mkdtemp(prefix="cvpdf_"))
+    try:
+        # Part du master_cv.yaml versionné (thème TI Québec calibré préservé par le sync).
+        seed = CV_PIPELINE / "master_cv.yaml"
+        yaml_path = work / "master_cv.yaml"
+        if seed.exists():
+            shutil.copy(seed, yaml_path)
+        subprocess.run([str(CV_VENV_PY), str(CV_PIPELINE / "sync_cv_from_obsidian.py"),
+                        "--variant", variant, "--out", str(yaml_path), "--offer", offer_text],
+                       cwd=str(work), env=env, check=True, capture_output=True, timeout=60)
+        subprocess.run([str(CV_RENDERCV), "render", str(yaml_path)],
+                       cwd=str(work), env=env, check=True, capture_output=True, timeout=180)
+        pdfs = list((work / "rendercv_output").glob("*.pdf"))
+        if not pdfs:
+            raise HTTPException(status_code=500, detail="rendu RenderCV : aucun PDF produit")
+        data = pdfs[0].read_bytes()
+    except subprocess.CalledProcessError as e:
+        err = (e.stderr or b"").decode("utf-8", "replace")[-300:]
+        raise HTTPException(status_code=500, detail=f"génération CV échouée : {err}")
+    except subprocess.TimeoutExpired:
+        raise HTTPException(status_code=504, detail="génération CV : délai dépassé")
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+        _CV_RENDER_LOCK.release()
+    fname = f"CV_Jaona_Rabaonarison_{slugify(entreprise)}_{slugify(poste)}.pdf"
+    return StreamingResponse(io.BytesIO(data), media_type="application/pdf",
+                             headers={"Content-Disposition": f'attachment; filename="{fname}"',
+                                      "X-CV-Variant": variant})
 
 @app.get("/api/perso")
 def get_perso():

@@ -50,8 +50,7 @@ test.describe('Copilote extension — CV PDF (B4.3 extension)', () => {
     const page = await context.newPage();
     await page.goto(`chrome-extension://${extId}/ui/sidepanel.html`);
 
-    // Ouvre la section CV/Lettre (repliée par défaut) -> charge les offres.
-    await page.locator('summary', { hasText: 'CV / Lettre' }).click();
+    // La liste des offres prêtes est en tête, ouverte par défaut.
     await page.locator('.jobchip').first().click();
 
     // Le bloc CV PDF apparaît ; on surcharge la variante puis on génère.

@@ -99,6 +99,16 @@
     color: #6b7280;
     margin-left: auto;
   }
+  .offer-link {
+    font-size: 10px;
+    font-weight: 700;
+    color: #93c5fd;
+    background: #1e3a5f;
+    padding: 2px 8px;
+    border-radius: 8px;
+    text-decoration: none;
+  }
+  .offer-link:active { opacity: .7; }
 
   .card-title {
     font-size: 14px;
@@ -341,6 +351,7 @@ function renderCard(job) {
       <div class="card-meta">
         ${pLabel !== 'P?' ? `<span class="prio-badge ${pClass}">${pLabel}</span>` : ''}
         ${deadlineText ? `<span class="deadline-badge ${deadlineUrgent ? 'urgent' : ''}">📅 ${deadlineText}</span>` : ''}
+        ${job.url ? `<a class="offer-link" href="${job.url}" target="_blank" rel="noopener">↗ Voir l'offre</a>` : ''}
         ${job.deadline ? `<span class="date-badge">${job.deadline}</span>` : ''}
       </div>
       <div class="card-title">${job.titre || '—'}</div>

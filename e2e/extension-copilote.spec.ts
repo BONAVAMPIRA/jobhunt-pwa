@@ -29,42 +29,46 @@ test.describe('Copilote extension — CV PDF (B4.3 extension)', () => {
 
   test.afterAll(async () => { await context?.close(); });
 
-  test('génère le CV PDF avec la variante choisie', async () => {
+  test('CV éditable : préparer le texte → éditer → rendre le PDF', async () => {
     await context.route('**/api/profil', r => r.fulfill({
-      json: { identite: { nom: 'Jaona', localisation: 'Verdun', telephone: '438', email: 'x@y.z' } },
+      json: { identite: { nom: 'Jaona Rabaonarison', localisation: 'Verdun', telephone: '438', email: 'x@y.z' } },
     }));
     await context.route('**/api/postuler-jobs', r => r.fulfill({
       json: { jobs: [{ job_id: 'J-T', entreprise: 'ACME', poste: 'Analyste BI', score: 82, docs: { lm: true, salaire: true, guide: true } }], total: 1 },
     }));
     await context.route('**/api/doc**', r => r.fulfill({ json: { content: '## Doc\nTexte de test.' } }));
-    let cvUrl = '';
-    await context.route('**/api/cv-pdf**', route => {
-      cvUrl = route.request().url();
-      return route.fulfill({
-        status: 200, contentType: 'application/pdf',
-        headers: { 'X-CV-Variant': 'BI', 'Content-Disposition': 'attachment; filename="CV.pdf"' },
-        body: '%PDF-1.4\n%mock cv\n',
-      });
+    // Étape 1 : le YAML tailoré, éditable.
+    let yamlUrl = '';
+    await context.route('**/api/cv-yaml**', route => {
+      yamlUrl = route.request().url();
+      return route.fulfill({ status: 200, contentType: 'application/json',
+        body: JSON.stringify({ job_id: 'J-T', variant: 'BI', yaml: 'cv:\n  name: Jaona Rabaonarison\n' }) });
+    });
+    // Étape 2 : rendu depuis le YAML (éventuellement édité).
+    let renderBody: any = null;
+    await context.route('**/api/cv-render', route => {
+      renderBody = route.request().postDataJSON();
+      return route.fulfill({ status: 200, contentType: 'application/pdf',
+        headers: { 'Content-Disposition': 'attachment; filename="CV.pdf"' }, body: '%PDF-1.4\n%mock cv\n' });
     });
 
     const page = await context.newPage();
     await page.goto(`chrome-extension://${extId}/ui/sidepanel.html`);
 
-    // La liste des offres prêtes est en tête, ouverte par défaut.
     await page.locator('.jobchip').first().click();
-
-    // Le bloc CV PDF apparaît ; on surcharge la variante puis on génère.
     await expect(page.getByText('CV — PDF TI Québec')).toBeVisible();
-    await page.locator('#cvVariant').selectOption('BA');
-    await page.locator('#cvGen').click();
 
-    // La requête est partie avec le bon job_id + la variante surchargée.
-    await expect.poll(() => cvUrl).toContain('/api/cv-pdf');
-    expect(cvUrl).toContain('job_id=J-T');
-    expect(cvUrl).toContain('variant=BA');
+    // Étape 1 : préparer -> le texte éditable apparaît, pré-rempli + auto-détecté.
+    await page.locator('#cvPrep').click();
+    const ta = page.locator('#cvYaml');
+    await expect(ta).toBeVisible();
+    await expect(ta).toHaveValue(/Jaona Rabaonarison/);
+    expect(yamlUrl).toContain('job_id=J-T');
 
-    // L'aperçu PDF (iframe) s'affiche dans le panneau.
+    // Édition + rendu -> l'aperçu PDF s'affiche et le YAML édité est bien envoyé.
+    await ta.fill('cv:\n  name: Jaona EDITED\n');
+    await page.locator('.cvrender').click();
     await expect(page.locator('#cvPreview iframe')).toBeAttached();
-    await expect(page.locator('#cvNote')).toContainText('Variante');
+    expect(renderBody.yaml).toContain('Jaona EDITED');
   });
 });

@@ -21,6 +21,8 @@
     { "source": "/api/suivi",          "destination": "/api/jobs.js" },
     { "source": "/api/doc",            "destination": "/api/jobs.js" },
     { "source": "/api/cv-pdf",         "destination": "/api/jobs.js" },
+    { "source": "/api/cv-yaml",        "destination": "/api/jobs.js" },
+    { "source": "/api/cv-render",      "destination": "/api/jobs.js" },
     { "source": "/api/perso",          "destination": "/api/jobs.js" },
     { "source": "/api/profil",         "destination": "/api/jobs.js" },
     { "source": "/api/mark-postule",   "destination": "/api/jobs.js" }

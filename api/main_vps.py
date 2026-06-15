@@ -307,6 +307,9 @@ def job_action(req: JobAction):
     elif req.action in ("abandonner", "ignorer"):
         statut = "abandonné"
         set_status(req.job_id, statut)
+    elif req.action in ("expirer", "expire"):  # offre découverte expirée au moment de postuler
+        statut = "expiré"
+        set_status(req.job_id, statut)
     # "contester" : pas de changement de statut ici (géré par /api/rescore)
     if statut:
         regen_briefing()
@@ -729,57 +732,99 @@ def get_doc(job_id: str, type: str, format: str = "md"):
         )
     raise HTTPException(status_code=400, detail="format invalide (md|docx)")
 
-@app.get("/api/cv-pdf")
-def cv_pdf(job_id: str, variant: str = "auto"):
-    """B4 — Génère le CV PDF (RenderCV, standard TI Québec) ciblé pour une offre.
-    Source de vérité = vault Obsidian. variant=auto -> heuristique sur le positionnement
-    de l'offre (modifiable côté copilote avant génération finale)."""
-    row = row_for_job(job_id)
-    if not row:
-        raise HTTPException(status_code=404, detail="job_id introuvable")
-    if not (CV_VENV_PY.exists() and CV_RENDERCV.exists()):
+# Pipeline CV en 2 temps (B4 + édition) :
+#   _cv_build_yaml : vault Obsidian + offre -> texte master_cv.yaml tailoré (éditable).
+#   _cv_render_yaml : texte YAML (édité ou non) -> PDF RenderCV. Verrou 1-rendu-à-la-fois.
+def _cv_build_yaml(row, variant):
+    if not CV_VENV_PY.exists():
         raise HTTPException(status_code=503, detail="pipeline CV indisponible (venv RenderCV absent)")
     if variant == "auto":
         variant = guess_variant(row.get("positionnement"))
     if variant not in CV_VARIANTS:
         raise HTTPException(status_code=400, detail=f"variant invalide (auto|{'|'.join(CV_VARIANTS)})")
-    entreprise = (row.get("entreprise") or "").strip()
-    poste = (row.get("poste") or "").strip()
     # B4.2 — texte de l'offre pour cibler compétences + mandats (tronqué, borné).
     offer_text = " ".join(str(row.get(k) or "") for k in
                           ("poste", "positionnement", "offer_mission", "offer_qualif",
                            "offer_contexte", "offer_autres"))[:4000]
     env = {**os.environ, "PYTHONUTF8": "1"}
-    if not _CV_RENDER_LOCK.acquire(blocking=False):
-        raise HTTPException(status_code=429, detail="génération CV déjà en cours, réessaie dans un instant")
-    work = Path(tempfile.mkdtemp(prefix="cvpdf_"))
+    work = Path(tempfile.mkdtemp(prefix="cvyaml_"))
     try:
-        # Part du master_cv.yaml versionné (thème TI Québec calibré préservé par le sync).
-        seed = CV_PIPELINE / "master_cv.yaml"
+        seed = CV_PIPELINE / "master_cv.yaml"           # thème TI Québec calibré préservé par le sync
         yaml_path = work / "master_cv.yaml"
         if seed.exists():
             shutil.copy(seed, yaml_path)
         subprocess.run([str(CV_VENV_PY), str(CV_PIPELINE / "sync_cv_from_obsidian.py"),
                         "--variant", variant, "--out", str(yaml_path), "--offer", offer_text],
                        cwd=str(work), env=env, check=True, capture_output=True, timeout=60)
+        return yaml_path.read_text(encoding="utf-8"), variant
+    except subprocess.CalledProcessError as e:
+        err = (e.stderr or b"").decode("utf-8", "replace")[-300:]
+        raise HTTPException(status_code=500, detail=f"préparation CV échouée : {err}")
+    except subprocess.TimeoutExpired:
+        raise HTTPException(status_code=504, detail="préparation CV : délai dépassé")
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+
+def _cv_render_yaml(yaml_text):
+    if not CV_RENDERCV.exists():
+        raise HTTPException(status_code=503, detail="pipeline CV indisponible (venv RenderCV absent)")
+    if not _CV_RENDER_LOCK.acquire(blocking=False):
+        raise HTTPException(status_code=429, detail="génération CV déjà en cours, réessaie dans un instant")
+    work = None
+    try:
+        env = {**os.environ, "PYTHONUTF8": "1"}
+        work = Path(tempfile.mkdtemp(prefix="cvpdf_"))   # dans le try : si ça échoue, le lock est quand même relâché
+        yaml_path = work / "master_cv.yaml"
+        yaml_path.write_text(yaml_text, encoding="utf-8")
         subprocess.run([str(CV_RENDERCV), "render", str(yaml_path)],
                        cwd=str(work), env=env, check=True, capture_output=True, timeout=180)
         pdfs = list((work / "rendercv_output").glob("*.pdf"))
         if not pdfs:
             raise HTTPException(status_code=500, detail="rendu RenderCV : aucun PDF produit")
-        data = pdfs[0].read_bytes()
+        return pdfs[0].read_bytes()
     except subprocess.CalledProcessError as e:
-        err = (e.stderr or b"").decode("utf-8", "replace")[-300:]
-        raise HTTPException(status_code=500, detail=f"génération CV échouée : {err}")
+        err = (e.stderr or b"").decode("utf-8", "replace")[-400:]
+        raise HTTPException(status_code=400, detail=f"YAML invalide / rendu échoué : {err}")
     except subprocess.TimeoutExpired:
         raise HTTPException(status_code=504, detail="génération CV : délai dépassé")
     finally:
-        shutil.rmtree(work, ignore_errors=True)
+        if work:
+            shutil.rmtree(work, ignore_errors=True)
         _CV_RENDER_LOCK.release()
-    fname = f"CV_Jaona_Rabaonarison_{slugify(entreprise)}_{slugify(poste)}.pdf"
+
+@app.get("/api/cv-pdf")
+def cv_pdf(job_id: str, variant: str = "auto"):
+    """B4 — CV PDF (RenderCV, TI Québec) ciblé pour une offre, généré direct depuis le vault."""
+    row = row_for_job(job_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="job_id introuvable")
+    yaml_text, variant = _cv_build_yaml(row, variant)
+    data = _cv_render_yaml(yaml_text)
+    fname = f"CV_Jaona_Rabaonarison_{slugify(row.get('entreprise') or '')}_{slugify(row.get('poste') or '')}.pdf"
     return StreamingResponse(io.BytesIO(data), media_type="application/pdf",
                              headers={"Content-Disposition": f'attachment; filename="{fname}"',
                                       "X-CV-Variant": variant})
+
+@app.get("/api/cv-yaml")
+def cv_yaml(job_id: str, variant: str = "auto"):
+    """Texte YAML RenderCV tailoré pour l'offre, à éditer côté copilote avant rendu."""
+    row = row_for_job(job_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="job_id introuvable")
+    yaml_text, variant = _cv_build_yaml(row, variant)
+    return {"job_id": job_id, "variant": variant, "yaml": yaml_text}
+
+class CvRender(BaseModel):
+    yaml: str
+
+@app.post("/api/cv-render")
+def cv_render(req: CvRender):
+    """Rend le CV PDF depuis un YAML édité (fourni par le copilote)."""
+    if not req.yaml or len(req.yaml) > 200000:
+        raise HTTPException(status_code=400, detail="YAML vide ou trop volumineux")
+    data = _cv_render_yaml(req.yaml)
+    return StreamingResponse(io.BytesIO(data), media_type="application/pdf",
+                             headers={"Content-Disposition": 'attachment; filename="CV.pdf"'})
 
 @app.get("/api/perso")
 def get_perso():

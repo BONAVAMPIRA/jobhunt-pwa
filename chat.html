@@ -691,44 +691,82 @@ async function sendToHermes(task, btn) {
   await sendHermes(task);
 }
 
+// Hermes est ASYNCHRONE : le backend met ~30s à booter le CLI, ce qui dépassait le
+// timeout Vercel (« Hermes inaccessible »). On lance la tâche (request_id immédiat)
+// puis on interroge /api/chat toutes les 2 s jusqu'à done/error. La bulle d'attente
+// (compteur qui monte) reste affichée pendant tout le polling.
 async function sendHermes(text) {
   addMsg(threadHermes, text, 'user');
   const { wrap, timer } = addHermesWaiting(threadHermes);
+  const stop = () => { clearInterval(timer); wrap.remove(); };
 
   try {
-    const res = await fetch('/api/chat', {
+    // 1) Lancer la tâche → retour immédiat avec request_id.
+    const startRes = await fetch('/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ message: text, session_id: histories.hermes.session_id, mode: 'hermes' }),
     });
-    const data = await res.json();
-    clearInterval(timer);
-    wrap.remove();
+    const start = await startRes.json();
 
-    if (data.session_id) {
-      histories.hermes.session_id = data.session_id;
-      sessionStorage.setItem('hermes_session', data.session_id);
+    // Compat : si un ancien backend synchrone renvoie déjà la réponse, on la rend.
+    if (start && start.response && !start.request_id) { stop(); return renderHermesResult(text, start); }
+    if (!start || !start.request_id) {
+      stop();
+      addMsg(threadHermes, 'Hermes : ' + ((start && start.detail) || 'pas de réponse.'), 'system');
+      return;
     }
 
-    const result = data.response || 'Pas de réponse.';
-    const bubble = addLabeledMsg(threadHermes, 'hermes', 'HERMES', 'label-hermes');
-    bubble.classList.add('md');
-    bubble.innerHTML = renderMarkdown(result);
-
-    // Boucle retour : Claude (cerveau) peut analyser ce résultat
-    const back = document.createElement('div');
-    back.className = 'claude-relay';
-    back.innerHTML = `
-      <div class="relay-label-c">↩ BOUCLER VERS CLAUDE</div>
-      <button class="relay-btn-c">Analyser ce résultat avec Claude ➤</button>`;
-    back.querySelector('button').addEventListener('click', (e) => relayToClaude(text, result, e.target));
-    threadHermes.appendChild(back);
-    threadHermes.scrollTop = threadHermes.scrollHeight;
+    // 2) Polling jusqu'à done/error (plafond ~125 s).
+    const deadline = Date.now() + 125000;
+    let data = null;
+    while (Date.now() < deadline) {
+      await new Promise(r => setTimeout(r, 2000));
+      const pr = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: 'hermes', poll_id: start.request_id }),
+      });
+      data = await pr.json();
+      if (data.status === 'done') break;
+      if (data.status === 'error') {
+        stop();
+        addMsg(threadHermes, 'Hermes : ' + (data.detail || 'erreur'), 'system');
+        return;
+      }
+    }
+    stop();
+    if (!data || data.status !== 'done') {
+      addMsg(threadHermes, 'Hermes met trop de temps à répondre. Réessaie.', 'system');
+      return;
+    }
+    renderHermesResult(text, data);
   } catch (e) {
-    clearInterval(timer);
-    wrap.remove();
+    stop();
     addMsg(threadHermes, 'Hermes inaccessible. Essaie le mode Claude.', 'system');
   }
+}
+
+// Rend la réponse d'Hermes + le bouton « boucler vers Claude ».
+function renderHermesResult(text, data) {
+  if (data.session_id) {
+    histories.hermes.session_id = data.session_id;
+    sessionStorage.setItem('hermes_session', data.session_id);
+  }
+  const result = data.response || 'Pas de réponse.';
+  const bubble = addLabeledMsg(threadHermes, 'hermes', 'HERMES', 'label-hermes');
+  bubble.classList.add('md');
+  bubble.innerHTML = renderMarkdown(result);
+
+  // Boucle retour : Claude (cerveau) peut analyser ce résultat
+  const back = document.createElement('div');
+  back.className = 'claude-relay';
+  back.innerHTML = `
+    <div class="relay-label-c">↩ BOUCLER VERS CLAUDE</div>
+    <button class="relay-btn-c">Analyser ce résultat avec Claude ➤</button>`;
+  back.querySelector('button').addEventListener('click', (e) => relayToClaude(text, result, e.target));
+  threadHermes.appendChild(back);
+  threadHermes.scrollTop = threadHermes.scrollHeight;
 }
 
 // Réinjecte le résultat d'Hermes dans le cerveau (Claude) pour qu'il enchaîne.

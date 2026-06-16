@@ -14,14 +14,24 @@ async function mockChat(page) {
   await page.route('**/api/chat', async (route) => {
     const body = route.request().postDataJSON() || {};
     if (body.mode === 'hermes') {
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({
-          response: 'Logs JobSpy : dernier run le 2026-06-04, **0 offre** collectée depuis.',
-          session_id: 'sess-1',
-        }),
-      });
+      // Hermes est async : kickoff -> { request_id }, puis polling -> { status:'done', ... }
+      if (body.poll_id) {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            status: 'done',
+            response: 'Logs JobSpy : dernier run le 2026-06-04, **0 offre** collectée depuis.',
+            session_id: 'sess-1',
+          }),
+        });
+      } else {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ request_id: 'req-1', status: 'pending' }),
+        });
+      }
       return;
     }
     // mode claude : on distingue le 1er appel de la boucle-retour

@@ -102,9 +102,9 @@ export default async function handler(req) {
   if (req.method !== 'POST') return new Response('Method not allowed', { status: 405 });
 
   const body = await req.json();
-  const { message, history = [], mode = 'claude', session_id } = body;
+  const { message, history = [], mode = 'claude', session_id, poll_id } = body;
 
-  if (mode === 'hermes') return handleHermes(message, session_id);
+  if (mode === 'hermes') return handleHermes(message, session_id, poll_id);
   return handleClaude(message, history);
 }
 
@@ -227,30 +227,35 @@ async function handleClaude(message, history) {
   });
 }
 
-async function handleHermes(message, sessionId) {
+// Hermes est ASYNCHRONE (le CLI met ~30s a booter, > timeout fonction Vercel) :
+// - sans poll_id : on lance la tache cote VPS et on rend { request_id, status:'pending' } ;
+// - avec poll_id : on interroge /api/chat-result -> { status: pending|done|error }.
+// Chaque appel est ainsi court ; la PWA fait le polling (cf. sendHermes dans chat.html).
+function jsonResponse(obj) {
+  return new Response(JSON.stringify(obj), {
+    headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+  });
+}
+
+async function handleHermes(message, sessionId, pollId) {
   const COCKPIT_URL = process.env.COCKPIT_API_URL;
   if (!COCKPIT_URL) {
-    return new Response(JSON.stringify({
-      response: 'Hermes non connecté — COCKPIT_API_URL manquante.',
-      session_id: ''
-    }), { headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } });
+    return jsonResponse({ status: 'error', response: 'Hermes non connecté — COCKPIT_API_URL manquante.', session_id: '' });
   }
+  const headers = { 'Content-Type': 'application/json' };
+  if (process.env.COCKPIT_API_TOKEN) headers['Authorization'] = `Bearer ${process.env.COCKPIT_API_TOKEN}`;
   try {
-    const chatHeaders = { 'Content-Type': 'application/json' };
-    if (process.env.COCKPIT_API_TOKEN) chatHeaders['Authorization'] = `Bearer ${process.env.COCKPIT_API_TOKEN}`;
+    if (pollId) {
+      const res = await fetch(`${COCKPIT_URL}/api/chat-result?request_id=${encodeURIComponent(pollId)}`, { headers });
+      return jsonResponse(await res.json());
+    }
     const res = await fetch(`${COCKPIT_URL}/api/chat`, {
       method: 'POST',
-      headers: chatHeaders,
+      headers,
       body: JSON.stringify({ message, session_id: sessionId }),
     });
-    const data = await res.json();
-    return new Response(JSON.stringify(data), {
-      headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
-    });
+    return jsonResponse(await res.json());   // { request_id, status:'pending' }
   } catch (err) {
-    return new Response(JSON.stringify({
-      response: 'Hermes inaccessible pour l\'instant.',
-      session_id: ''
-    }), { headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } });
+    return jsonResponse({ status: 'error', response: 'Hermes inaccessible pour l\'instant.', session_id: '' });
   }
 }

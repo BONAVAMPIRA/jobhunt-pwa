@@ -11,7 +11,7 @@ test.use({ serviceWorkers: 'block' });
 
 const JOB = {
   job_id: 'J-TEST-1', titre: 'Analyste BI', entreprise: 'ACME',
-  score: 62, priorite: 'B', forces: ['Power BI'], gaps: ['DAX avancé'],
+  score: 62, tier: 'B', priorite: 'B', forces: ['Power BI'], gaps: ['DAX avancé'],
   deadline: '', date_collecte: '2026-06-10', positionnement: 'Bon fit BI.',
   recommandation: '',
 };
@@ -46,4 +46,13 @@ test('contestation async : la carte affiche le score révisé après polling', a
   const revised = page.locator('.card', { hasText: 'Score révisé' });
   await expect(revised).toBeVisible({ timeout: 15000 });
   await expect(revised).toContainText('62 → 81');
+});
+
+test('badge de tier : la carte affiche le tier A/B/C', async ({ page }) => {
+  await page.route('**/api/jobs', r => r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ jobs: [JOB], total: 1 }) }));
+  await page.route('**/api/briefing', r => r.fulfill({ status: 200, contentType: 'application/json', body: '{}' }));
+  await page.goto('/scoring.html');
+  const card = page.locator('.card', { hasText: 'Analyste BI' });
+  await expect(card.locator('.tier-badge.tier-b')).toBeVisible();
+  await expect(card.locator('.tier-badge')).toContainText('entrée');
 });

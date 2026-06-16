@@ -86,6 +86,16 @@
   .prio-1 { background: #7f1d1d; color: #fca5a5; }
   .prio-2 { background: #451a03; color: #fcd34d; }
   .prio-3 { background: #1e3a5f; color: #93c5fd; }
+  .tier-badge {
+    font-size: 10px;
+    font-weight: 800;
+    padding: 2px 8px;
+    border-radius: 8px;
+    letter-spacing: 0.04em;
+  }
+  .tier-a { background: #064e3b; color: #6ee7b7; border: 1px solid #10b981; }
+  .tier-b { background: #1e3a5f; color: #93c5fd; border: 1px solid #3b82f6; }
+  .tier-c { background: #374151; color: #d1d5db; border: 1px solid #6b7280; }
   .deadline-badge {
     font-size: 10px;
     color: #9ca3af;
@@ -300,6 +310,11 @@ function freshness(job) {
   return { daysLeft: null, estimated: false };
 }
 
+function tierBadge(t) {
+  const map = { A: ['tier-a', '🅰 viser'], B: ['tier-b', '🅱 entrée'], C: ['tier-c', '🅲 filet'] };
+  const m = map[t];
+  return m ? `<span class="tier-badge ${m[0]}" title="Tier ${t}">${m[1]}</span>` : '';
+}
 function scoreColor(s) {
   if (s >= 75) return 'score-hi';
   if (s >= 55) return 'score-mid';
@@ -349,6 +364,7 @@ function renderCard(job) {
   card.innerHTML = `
     <div class="card-top">
       <div class="card-meta">
+        ${tierBadge(job.tier)}
         ${pLabel !== 'P?' ? `<span class="prio-badge ${pClass}">${pLabel}</span>` : ''}
         ${deadlineText ? `<span class="deadline-badge ${deadlineUrgent ? 'urgent' : ''}">📅 ${deadlineText}</span>` : ''}
         ${job.url ? `<a class="offer-link" href="${job.url}" target="_blank" rel="noopener">↗ Voir l'offre</a>` : ''}

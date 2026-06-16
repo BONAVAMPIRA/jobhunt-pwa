@@ -272,7 +272,8 @@
   <h1>Scoring <span style="font-size:9px;color:#4b5563;font-weight:400;">build v13</span></h1>
   <div class="header-right">
     <span class="count-badge" id="count">—</span>
-    <button class="sort-btn active" id="sort-prio" onclick="setSort('prio')">Urgence</button>
+    <button class="sort-btn active" id="sort-tier" onclick="setSort('tier')">Tier</button>
+    <button class="sort-btn" id="sort-prio" onclick="setSort('prio')">Urgence</button>
     <button class="sort-btn" id="sort-score" onclick="setSort('score')">Score</button>
   </div>
 </div>
@@ -288,7 +289,7 @@
 
 <script>
 let jobs = [];
-let sortMode = 'prio';
+let sortMode = 'tier';
 let loadError = null;
 
 function daysLeft(deadline) {
@@ -415,6 +416,12 @@ function sortJobs(list) {
     // Expirées (réelles ou estimées) toujours en bas, quel que soit le tri.
     const ea = isExp(a) ? 1 : 0, eb = isExp(b) ? 1 : 0;
     if (ea !== eb) return ea - eb;
+    if (sortMode === 'tier') {
+      const tMap = { 'A': 0, 'B': 1, 'C': 2 };
+      const ta = tMap[a.tier] ?? 9, tb = tMap[b.tier] ?? 9;
+      if (ta !== tb) return ta - tb;
+      return (b.score || 0) - (a.score || 0);
+    }
     if (sortMode === 'prio') {
       const pMap = {'A':1,'B':2,'C':3,'D':4,'P1':1,'P2':2,'P3':3,'1':1,'2':2,'3':3};
       const pa = pMap[a.priorite] || 99;
@@ -468,6 +475,7 @@ function render() {
 
 function setSort(mode) {
   sortMode = mode;
+  document.getElementById('sort-tier').classList.toggle('active', mode === 'tier');
   document.getElementById('sort-prio').classList.toggle('active', mode === 'prio');
   document.getElementById('sort-score').classList.toggle('active', mode === 'score');
   render();

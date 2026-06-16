@@ -34,7 +34,7 @@ test.describe('Copilote extension — CV PDF (B4.3 extension)', () => {
       json: { identite: { nom: 'Jaona Rabaonarison', localisation: 'Verdun', telephone: '438', email: 'x@y.z' } },
     }));
     await context.route('**/api/postuler-jobs', r => r.fulfill({
-      json: { jobs: [{ job_id: 'J-T', entreprise: 'ACME', poste: 'Analyste BI', score: 82, docs: { lm: true, salaire: true, guide: true } }], total: 1 },
+      json: { jobs: [{ job_id: 'J-T', entreprise: 'ACME', poste: 'Analyste BI', score: 82, tier: 'B', docs: { lm: true, salaire: true, guide: true } }], total: 1 },
     }));
     await context.route('**/api/doc**', r => r.fulfill({ json: { content: '## Doc\nTexte de test.' } }));
     // Étape 1 : le YAML tailoré, éditable.
@@ -65,10 +65,11 @@ test.describe('Copilote extension — CV PDF (B4.3 extension)', () => {
     await expect(ta).toHaveValue(/Jaona Rabaonarison/);
     expect(yamlUrl).toContain('job_id=J-T');
 
-    // Édition + rendu -> l'aperçu PDF s'affiche et le YAML édité est bien envoyé.
+    // Édition + rendu -> l'aperçu plein écran s'affiche (plus d'iframe miniature depuis
+    // le refactor CV éditable) et le YAML édité est bien envoyé.
     await ta.fill('cv:\n  name: Jaona EDITED\n');
     await page.locator('.cvrender').click();
-    await expect(page.locator('#cvPreview iframe')).toBeAttached();
+    await expect(page.locator('#cvPreview .cvbig')).toBeVisible();
     expect(renderBody.yaml).toContain('Jaona EDITED');
   });
 });

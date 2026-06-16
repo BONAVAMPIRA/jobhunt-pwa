@@ -12,10 +12,10 @@ test('suivi : cartes postulées, prétention salariale visible, recherche', asyn
   await page.route('**/api/suivi', r => r.fulfill({
     status: 200, contentType: 'application/json',
     body: JSON.stringify({ jobs: [
-      { job_id: 'J1', entreprise: 'Pursuit', poste: 'BI Analyst', statut: 'postulé', score: 86,
+      { job_id: 'J1', entreprise: 'Pursuit', poste: 'BI Analyst', statut: 'postulé', score: 86, tier: 'A',
         url: 'https://x.test/1', date: '2026-06-14', salaire_cible: '90 000 $', salaire_plancher: '80 000 $',
         docs: { cv: true, lm: true, salaire: true, guide: true } },
-      { job_id: 'J2', entreprise: 'Ashling', poste: 'AI Business Analyst', statut: 'entrevue', score: 84,
+      { job_id: 'J2', entreprise: 'Ashling', poste: 'AI Business Analyst', statut: 'entrevue', score: 84, tier: 'B',
         url: '', date: '', salaire_cible: '', salaire_plancher: '', docs: {} },
     ], total: 2 }),
   }));

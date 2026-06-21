@@ -1,6 +1,10 @@
 import { test, expect, chromium, type BrowserContext } from '@playwright/test';
 import path from 'path';
 import fs from 'fs';
+import { fileURLToPath } from 'node:url';
+
+// "type": "module" (Vite) → __dirname indisponible en ESM, on le reconstruit.
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 /**
  * Harnais Playwright pour l'EXTENSION (copilote, sidepanel MV3).

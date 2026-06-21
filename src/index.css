@@ -112,3 +112,23 @@ body {
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
+
+/* Rendu Markdown (chat) — injecté via dangerouslySetInnerHTML */
+.md-body > *:first-child { margin-top: 0; }
+.md-body > *:last-child { margin-bottom: 0; }
+.md-body p { margin: 0 0 8px; }
+.md-body h1, .md-body h2, .md-body h3, .md-body h4, .md-body h5, .md-body h6 { margin: 12px 0 6px; line-height: 1.25; color: var(--color-foreground); font-weight: 700; }
+.md-body h1 { font-size: 17px; } .md-body h2 { font-size: 15px; } .md-body h3 { font-size: 14px; }
+.md-body ul, .md-body ol { margin: 4px 0 8px; padding-left: 20px; }
+.md-body li { margin: 2px 0; }
+.md-body a { color: var(--color-primary); text-decoration: underline; }
+.md-body strong { font-weight: 700; }
+.md-body em { font-style: italic; }
+.md-body code { background: var(--color-muted); border: 1px solid var(--color-border); border-radius: 4px; padding: 1px 5px; font-family: ui-monospace, Consolas, monospace; font-size: 12px; }
+.md-body pre { background: var(--color-muted); border: 1px solid var(--color-border); border-radius: 8px; padding: 10px 12px; overflow-x: auto; margin: 6px 0; }
+.md-body pre code { background: none; border: none; padding: 0; }
+.md-body blockquote { border-left: 3px solid var(--color-border); margin: 6px 0; padding: 2px 0 2px 10px; color: var(--color-muted-foreground); }
+.md-body hr { border: none; border-top: 1px solid var(--color-border); margin: 10px 0; }
+.md-body table { border-collapse: collapse; margin: 6px 0; width: 100%; font-size: 12px; display: block; overflow-x: auto; }
+.md-body th, .md-body td { border: 1px solid var(--color-border); padding: 5px 8px; text-align: left; }
+.md-body th { background: var(--color-muted); font-weight: 700; }

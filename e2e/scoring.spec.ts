@@ -48,9 +48,9 @@ test('Le tri par Score est sélectionnable', async ({ page }) => {
   await expect(page.getByTestId('sort-score')).toHaveClass(/text-primary/);
 });
 
-test('Navigation vers un écran encore en migration', async ({ page }) => {
+test('Navigation entre écrans migrés', async ({ page }) => {
   await page.goto('/scoring');
   await page.getByTestId('nav-chat').click();
   await expect(page).toHaveURL(/\/chat/);
-  await expect(page.getByText(/migration/i).first()).toBeVisible();
+  await expect(page.getByTestId('msg-input')).toBeVisible();
 });

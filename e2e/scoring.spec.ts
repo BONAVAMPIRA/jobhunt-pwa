@@ -50,7 +50,7 @@ test('Le tri par Score est sélectionnable', async ({ page }) => {
 
 test('Navigation vers un écran encore en migration', async ({ page }) => {
   await page.goto('/scoring');
-  await page.getByTestId('nav-suivi').click();
-  await expect(page).toHaveURL(/\/suivi/);
+  await page.getByTestId('nav-système').click();
+  await expect(page).toHaveURL(/\/systeme/);
   await expect(page.getByText(/migration/i).first()).toBeVisible();
 });
